@@ -14,3 +14,7 @@ Open `index.html` in a modern browser. Use **A / D** or the **arrow keys** to mo
 - Outfit color selection
 - Responsive layout for desktop and mobile widths
 - Navigation placeholders for future table tennis and tennis modes
+
+## Generated art
+
+The court background, player kits, swing animation, opponent frames, and shuttlecock are generated HD art assets processed into transparent runtime frames. See `assets/ART_PIPELINE.md` for the asset map.
