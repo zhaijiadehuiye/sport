@@ -1,1 +1,16 @@
-# sport
+# Rally Club · Badminton
+
+A polished, playable 2D badminton training game built with semantic HTML, CSS and Canvas.
+
+## Play
+
+Open `index.html` in a modern browser. Use **A / D** or the **arrow keys** to move, and **Space** to swing. First player to 7 points wins the current training match.
+
+## Included
+
+- Animated canvas court with perspective, net, shuttle trails, impact particles and player shadows
+- Animated illustrated athletes with hair, outfits, rackets and swing poses
+- Scoreboard, rally counter, energy meter and round progression
+- Outfit color selection
+- Responsive layout for desktop and mobile widths
+- Navigation placeholders for future table tennis and tennis modes
