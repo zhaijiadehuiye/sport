@@ -4,7 +4,7 @@ A polished, playable 2D badminton training game built with semantic HTML, CSS an
 
 ## Play
 
-Open `index.html` in a modern browser. Use **A / D** or the **arrow keys** to move, and **Space** to swing. First player to 7 points wins the current training match.
+Open `index.html` in a modern browser. Use **A / D** or the **arrow keys** to move, and **Space** to swing. First player to 21 points wins the current training match.
 
 ## Included
 
