@@ -151,14 +151,17 @@
   }
 
   function createShuttle() {
-    const serveX = state.serveSide === 0 ? 250 : 710;
+    const server = state.players[state.serveSide];
+    const hand = server ? serveHandWorld(server) : null;
+    const serveX = hand ? hand.x : (state.serveSide === 0 ? 250 : 710);
+    const serveH = hand ? FLOOR - hand.y : 128;
     return {
       x: serveX,
-      h: 128,
+      h: serveH,
       vx: 0,
       vh: 0,
       lastX: serveX,
-      lastH: 128,
+      lastH: serveH,
       lastHit: -1,
       age: 0,
       trail: [],
