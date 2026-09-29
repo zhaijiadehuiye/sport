@@ -482,7 +482,11 @@
     const tossHeight = t < .72
       ? lerp(FLOOR - hand.y, 188, 1 - Math.pow(1 - tossT, 2))
       : lerp(188, 150, dropT * dropT);
-    s.x = lerp(hand.x, server.x + direction * 58, t);
+    // Carry the toss toward the racket side in a shallow arc. A straight
+    // line through the torso makes the shuttle appear to pass through the
+    // player's face while the hand-off is still in progress.
+    s.x = lerp(hand.x, server.x + direction * 58, t)
+      + direction * 42 * Math.sin(Math.PI * t);
     s.h = tossHeight;
     s.lastX = s.x;
     s.lastH = s.h;
