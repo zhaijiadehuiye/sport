@@ -17,6 +17,9 @@
   const SHUTTLE_VERTICAL_DRAG = 0.14;
   const WIN_SCORE = 7;
   const TAU = Math.PI * 2;
+  const SPRITE_SIZE = 226;
+  const SPRITE_FEET_Y = 245;
+  const SPRITE_SCALE = SPRITE_SIZE / 256;
 
   const $ = (id) => document.getElementById(id);
   const keys = new Set();
@@ -28,6 +31,25 @@
     if (value > target) return Math.max(value - amount, target);
     return target;
   };
+
+  const asset = (src) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = src;
+    return image;
+  };
+
+  const art = {
+    playerIdle: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-idle/idle-${n}.png`)),
+    playerCoral: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-coral/idle-${n}.png`)),
+    playerSky: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-sky/idle-${n}.png`)),
+    playerSwing: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-swing/attack-${n}.png`)),
+    opponentIdle: [1, 2, 3, 4].map((n) => asset(`assets/processed/opponent-idle/idle-${n}.png`)),
+    shuttle: [1, 2, 3, 4].map((n) => asset(`assets/processed/shuttle/projectile-${n}.png`))
+  };
+  const tintedSwingCache = { coral: [], sky: [] };
+
+  const drawableReady = (image) => Boolean(image && image.width > 0 && image.height > 0);
 
   const players = {
     sam: { name: "Top Hat Sam", kind: "sam", accent: "#f1e9d1", body: "#101417", head: "#f3ecdd" },
@@ -81,6 +103,7 @@
 
   function createPlayer(side, choice, human) {
     const info = players[choice] || players.sam;
+    const spriteKit = choice === "robot" ? "sky" : choice === "red" ? "coral" : "mint";
     return {
       side,
       x: side === 0 ? 205 : 755,
@@ -101,6 +124,8 @@
       facing: side === 0 ? 1 : -1,
       human,
       choice,
+      spriteKit,
+      useOpponentIdle: side === 1 && choice === "red",
       info,
       name: info.name,
       moveBlend: 0,
@@ -377,7 +402,52 @@
     }
   }
 
-  function racketPose(player, overrideProgress = null) {
+  const swingRacketFrames = [
+    { hand: [98, 129], head: [158, 78] },
+    { hand: [143, 121], head: [221, 87] },
+    { hand: [144, 112], head: [183, 64] },
+    { hand: [145, 92], head: [183, 66] }
+  ];
+  const idleRacketRight = { hand: [138, 144], head: [175, 120] };
+  const idleRacketLeft = { hand: [116, 141], head: [80, 108] };
+
+  function spriteShouldBeFlipped(player, active) {
+    if (player.side === 0) return false;
+    return active || !player.useOpponentIdle;
+  }
+
+  function spriteRacketPose(player, overrideProgress = null) {
+    const active = player.swingTime > 0 || overrideProgress !== null;
+    const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
+    const frameIndex = active
+      ? clamp(Math.floor(progress * swingRacketFrames.length), 0, swingRacketFrames.length - 1)
+      : 0;
+    const frame = active
+      ? swingRacketFrames[frameIndex]
+      : (player.useOpponentIdle ? idleRacketLeft : idleRacketRight);
+    const flip = spriteShouldBeFlipped(player, active);
+    const lean = clamp(player.vx / 800, -1, 1) * 4;
+    const drawY = FLOOR - player.y - SPRITE_SIZE * (SPRITE_FEET_Y / 256);
+    const toWorld = ([x, y]) => ({
+      x: player.x + lean + (flip ? 256 - x : x) * SPRITE_SCALE - 128 * SPRITE_SCALE,
+      y: drawY + y * SPRITE_SCALE
+    });
+    const hand = toWorld(frame.hand);
+    const head = toWorld(frame.head);
+    return {
+      side: player.side === 0 ? 1 : -1,
+      handX: hand.x,
+      handY: hand.y,
+      angle: Math.atan2(head.y - hand.y, head.x - hand.x),
+      tipX: head.x,
+      tipY: head.y,
+      progress,
+      active,
+      sprite: true
+    };
+  }
+
+  function vectorRacketPose(player, overrideProgress = null) {
     const side = player.side === 0 ? 1 : -1;
     const lean = clamp(player.vx / 800, -1, 1) * 4;
     // The hand sits at the end of the striking arm. Keeping this single pose
@@ -407,6 +477,17 @@
       progress,
       active
     };
+  }
+
+  function useSpriteArt(player) {
+    const idle = player.useOpponentIdle ? art.opponentIdle[0] : art.playerIdle[0];
+    return drawableReady(idle) && drawableReady(art.playerSwing[0]);
+  }
+
+  function racketPose(player, overrideProgress = null) {
+    return useSpriteArt(player)
+      ? spriteRacketPose(player, overrideProgress)
+      : vectorRacketPose(player, overrideProgress);
   }
 
   function distanceToSegment(px, py, x1, y1, x2, y2) {
@@ -918,7 +999,7 @@
     drawFrame(pose);
   }
 
-  function drawPlayer(player) {
+  function drawStickPlayer(player) {
     const info = player.info;
     const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.2 + player.moveBlend * 1.8) : 0;
     const floorY = FLOOR - player.y;
@@ -1007,6 +1088,108 @@
     ctx.restore();
   }
 
+  function tintSwingFrame(image, kit) {
+    if (!drawableReady(image) || kit === "mint") return image;
+    const buffer = document.createElement("canvas");
+    buffer.width = image.naturalWidth || image.width;
+    buffer.height = image.naturalHeight || image.height;
+    const bufferCtx = buffer.getContext("2d");
+    bufferCtx.drawImage(image, 0, 0);
+    const pixels = bufferCtx.getImageData(0, 0, buffer.width, buffer.height);
+    const target = kit === "coral" ? [218, 61, 73] : [56, 151, 205];
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      const alpha = pixels.data[i + 3];
+      if (alpha < 24) continue;
+      const r = pixels.data[i];
+      const g = pixels.data[i + 1];
+      const b = pixels.data[i + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const chroma = max - min;
+      // The mint shirt is the only saturated green region in the frame. Keep
+      // skin, hair, shoes, strings and the white number untouched.
+      if (chroma < 18 || g < r * 1.04 || g < b * .92 || r > 205) continue;
+      const light = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      const scale = clamp(light / .58, .58, 1.28);
+      pixels.data[i] = clamp(target[0] * scale, 0, 255);
+      pixels.data[i + 1] = clamp(target[1] * scale, 0, 255);
+      pixels.data[i + 2] = clamp(target[2] * scale, 0, 255);
+    }
+    bufferCtx.putImageData(pixels, 0, 0);
+    return buffer;
+  }
+
+  function getSwingFrame(player, index) {
+    const source = art.playerSwing[index];
+    if (player.spriteKit === "mint" || !drawableReady(source)) return source;
+    if (!tintedSwingCache[player.spriteKit][index]) {
+      tintedSwingCache[player.spriteKit][index] = tintSwingFrame(source, player.spriteKit);
+    }
+    return tintedSwingCache[player.spriteKit][index];
+  }
+
+  function idleFramesFor(player) {
+    if (player.useOpponentIdle) return art.opponentIdle;
+    if (player.spriteKit === "coral") return art.playerCoral;
+    if (player.spriteKit === "sky") return art.playerSky;
+    return art.playerIdle;
+  }
+
+  function drawSpritePlayer(player) {
+    const active = player.swingTime > 0;
+    const progress = active ? 1 - player.swingTime / player.swingDuration : 0;
+    const frameIndex = active
+      ? clamp(Math.floor(progress * art.playerSwing.length), 0, art.playerSwing.length - 1)
+      : Math.floor(state.clock * 3.2 + player.side * .7) % 4;
+    const image = active ? getSwingFrame(player, frameIndex) : idleFramesFor(player)[frameIndex];
+    if (!drawableReady(image)) {
+      drawStickPlayer(player);
+      return;
+    }
+
+    const lean = clamp(player.vx / 800, -1, 1) * 4;
+    const drawY = FLOOR - player.y - SPRITE_SIZE * (SPRITE_FEET_Y / 256);
+    const flip = spriteShouldBeFlipped(player, active);
+    drawShadow(player);
+
+    ctx.save();
+    ctx.translate(player.x + lean, 0);
+    ctx.scale(flip ? -1 : 1, 1);
+    ctx.globalAlpha = .98;
+    ctx.drawImage(image, -SPRITE_SIZE / 2, drawY, SPRITE_SIZE, SPRITE_SIZE);
+    ctx.restore();
+
+    if (active) {
+      const pose = racketPose(player);
+      ctx.save();
+      ctx.globalAlpha = .16 + Math.sin(progress * Math.PI) * .16;
+      ctx.strokeStyle = player.info.accent;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(pose.handX, pose.handY);
+      ctx.lineTo(pose.tipX, pose.tipY);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (!player.onGround && player.y > 55) {
+      ctx.save();
+      ctx.globalAlpha = .18;
+      ctx.strokeStyle = player.info.accent;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(player.x, FLOOR - player.y - 72, 31, Math.PI * .1, Math.PI * .9);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawPlayer(player) {
+    if (useSpriteArt(player)) drawSpritePlayer(player);
+    else drawStickPlayer(player);
+  }
+
   function drawShuttle() {
     const s = state.shuttle;
     if (!s) return;
@@ -1037,6 +1220,24 @@
 
     const y = FLOOR - s.h;
     const speed = Math.hypot(s.vx, s.vh);
+    const shuttleFrame = art.shuttle[Math.floor(state.clock * 14 + Math.abs(s.rotation) * 3) % art.shuttle.length];
+    if (drawableReady(shuttleFrame)) {
+      const size = clamp(48 + speed / 48, 48, 72);
+      const flightAngle = Math.atan2(-s.vh, s.vx || 1);
+      // The source sprite points its cork down-left. Rotate that axis onto
+      // the actual velocity so the cork always leads the flight.
+      const spriteAxis = 2.31;
+      ctx.save();
+      ctx.translate(s.x, y);
+      ctx.rotate(flightAngle - spriteAxis);
+      ctx.globalAlpha = .96;
+      ctx.shadowColor = s.hitFlash > 0 ? "rgba(255,239,166,.95)" : "rgba(255,255,255,.12)";
+      ctx.shadowBlur = s.hitFlash > 0 ? 18 : 2;
+      ctx.drawImage(shuttleFrame, -size / 2, -size / 2, size, size);
+      ctx.restore();
+      return;
+    }
+
     const scale = 1 + clamp(speed / 1700, 0, .24);
     const angle = Math.atan2(-s.vh, s.vx || 1);
     ctx.save();
