@@ -93,7 +93,7 @@
       jumpSpeed: 720,
       onGround: true,
       swingTime: 0,
-      swingDuration: .27,
+      swingDuration: .34,
       swingContacted: false,
       swingCooldown: 0,
       hitCooldown: 0,
@@ -377,18 +377,24 @@
 
   function racketPose(player, overrideProgress = null) {
     const side = player.side === 0 ? 1 : -1;
-    const baseX = player.x + side * 10;
-    const baseY = FLOOR - player.y - 88;
+    const lean = clamp(player.vx / 800, -1, 1) * 4;
+    // The hand sits at the end of the striking arm. Keeping this single pose
+    // as the source for both drawing and collision prevents the racket from
+    // visually floating away from the stick figure.
+    const baseX = player.x + lean + side * 30;
+    const baseY = FLOOR - player.y - 112;
     const active = player.swingTime > 0;
     const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
-    const eased = progress * progress * (3 - 2 * progress);
-    const rest = side === 1 ? -.82 : Math.PI + .82;
-    const start = side === 1 ? -1.58 : Math.PI + 1.58;
-    const end = side === 1 ? .72 : Math.PI - .72;
+    const eased = progress < .5
+      ? 4 * progress * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+    const rest = side === 1 ? -.88 : Math.PI + .88;
+    const start = side === 1 ? -1.66 : Math.PI + 1.66;
+    const end = side === 1 ? .46 : Math.PI - .46;
     const angle = active ? lerp(start, end, eased) : rest;
-    const reach = active ? 71 + Math.sin(progress * Math.PI) * 5 : 63;
-    const handX = baseX + side * 7;
-    const handY = baseY + 4;
+    const reach = active ? 70 + Math.sin(progress * Math.PI) * 9 : 60;
+    const handX = baseX;
+    const handY = baseY;
     return {
       side,
       handX,
@@ -438,8 +444,8 @@
 
   function canReceive(player, shuttle) {
     const onOwnSide = player.side === 0
-      ? shuttle.x < NET_X + 24
-      : shuttle.x > NET_X - 24;
+      ? shuttle.x < NET_X + 24 || shuttle.lastX < NET_X + 24
+      : shuttle.x > NET_X - 24 || shuttle.lastX > NET_X - 24;
     const outgoingDirection = player.side === 0 ? 1 : -1;
     const incoming = shuttle.vx * outgoingDirection < 150;
     return onOwnSide && incoming && shuttle.lastHit !== player.side;
@@ -476,17 +482,22 @@
     const quality = clamp(.38 + timing * .34 + sweet * .24 + airborne * .08, .22, 1);
     const direction = player.side === 0 ? 1 : -1;
     const sideOffset = clamp((s.x - player.x) / 96, -1, 1);
-    const baseSpeed = 760 + quality * 300 + Math.abs(player.vx) * .16;
-    const aim = sideOffset * 100;
-    const smash = contactHeightRatio > .56 && airborne > .16 && quality > .66;
+    const aim = sideOffset * 105;
+    // A smash is a fast, shallow shot. It should travel through the net's
+    // upper gap and begin dropping soon after, rather than becoming another
+    // high lob with a different label.
+    const smash = contactHeightRatio > .72 && airborne > .10 && quality > .66;
+    const baseSpeed = smash
+      ? 1080 + quality * 300 + Math.abs(player.vx) * .12
+      : 760 + quality * 300 + Math.abs(player.vx) * .16;
     const launchHeight = smash
-      ? 265 + quality * 90
+      ? 24 + quality * 72
       : 520 + (1 - contactHeightRatio) * 195 + (1 - quality) * 65;
 
     s.lastX = s.x;
     s.lastH = s.h;
     s.vx = direction * baseSpeed + direction * aim;
-    s.vh = clamp(launchHeight, 240, 790);
+    s.vh = smash ? clamp(launchHeight, 18, 180) : clamp(launchHeight, 240, 790);
     s.lastHit = player.side;
     s.age = 0;
     s.netHit = false;
@@ -499,7 +510,7 @@
     const label = smash ? "SMASH!" : quality > .72 ? "CLEAN HIT" : "HIT";
     setStatus(smash ? "SMASH" : "RALLY");
     showToast(label, .38);
-    hitBurst(s.x, by, smash ? "#fff0a9" : "#ffd8bf", smash ? 22 : 11, smash);
+    hitBurst(s.x, by, smash ? "#fff0a9" : "#ffd8bf", smash ? 22 : 11, smash, Math.atan2(-s.vh, s.vx));
     beep(smash ? "smash" : "hit");
     return true;
   }
@@ -646,8 +657,8 @@
     }
   }
 
-  function hitBurst(x, y, color, count = 12, smash = false) {
-    state.hitFx.push({ x, y, life: smash ? .48 : .32, max: smash ? .48 : .32, smash });
+  function hitBurst(x, y, color, count = 12, smash = false, angle = 0) {
+    state.hitFx.push({ x, y, life: smash ? .48 : .32, max: smash ? .48 : .32, smash, angle });
     burst(x, y, color, count);
   }
 
@@ -847,42 +858,55 @@
     ctx.restore();
   }
 
-  function drawRacket(player) {
-    const pose = racketPose(player);
+  function drawRacket(player, pose = racketPose(player)) {
     const t = pose.active ? pose.progress : 0;
-    ctx.save();
-    if (pose.active) {
-      const start = pose.side === 1 ? -1.58 : Math.PI + 1.58;
-      const end = pose.side === 1 ? .72 : Math.PI - .72;
-      ctx.globalAlpha = .22 * Math.sin(t * Math.PI);
-      ctx.strokeStyle = player.info.accent;
-      ctx.lineWidth = 5;
+    const drawFrame = (frame, alpha = 1, ghost = false) => {
+      const centerX = frame.tipX + Math.cos(frame.angle) * 7;
+      const centerY = frame.tipY + Math.sin(frame.angle) * 7;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = ghost ? player.info.accent : "#e7e9df";
+      ctx.lineWidth = ghost ? 2.5 : 3;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.arc(pose.handX, pose.handY, 57, start, end, pose.side < 0);
+      ctx.moveTo(frame.handX, frame.handY);
+      ctx.lineTo(frame.tipX, frame.tipY);
       ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    ctx.strokeStyle = "#b8c0bc";
-    ctx.lineWidth = 4;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(pose.handX, pose.handY);
-    ctx.lineTo(pose.tipX, pose.tipY);
-    ctx.stroke();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(frame.angle);
+      ctx.beginPath(); ctx.ellipse(0, 0, 12, 25, 0, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = ghost ? player.info.accent : "rgba(207,218,211,.66)";
+      ctx.lineWidth = ghost ? 1 : 1.1;
+      ctx.beginPath();
+      ctx.moveTo(-7, -16); ctx.lineTo(7, 16);
+      ctx.moveTo(7, -16); ctx.lineTo(-7, 16);
+      ctx.moveTo(0, -20); ctx.lineTo(0, 20);
+      ctx.moveTo(-10, -7); ctx.lineTo(10, -7);
+      ctx.moveTo(-10, 7); ctx.lineTo(10, 7);
+      ctx.stroke();
+      ctx.restore();
+    };
 
-    ctx.translate(pose.tipX, pose.tipY);
-    ctx.rotate(pose.angle + Math.PI / 2);
-    ctx.strokeStyle = "#e7e9df";
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(0, 0, 13, 28, 0, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = "rgba(207,218,211,.58)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-8, -17); ctx.lineTo(8, 17);
-    ctx.moveTo(8, -17); ctx.lineTo(-8, 17);
-    ctx.moveTo(0, -20); ctx.lineTo(0, 20);
-    ctx.stroke();
-    ctx.restore();
+    if (pose.active) {
+      const start = pose.side === 1 ? -1.66 : Math.PI + 1.66;
+      const end = pose.side === 1 ? .46 : Math.PI - .46;
+      ctx.save();
+      ctx.globalAlpha = .12 + Math.sin(t * Math.PI) * .12;
+      ctx.strokeStyle = player.info.accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(pose.handX, pose.handY, 67, start, end, pose.side < 0);
+      ctx.stroke();
+      ctx.globalAlpha = .42 * Math.sin(t * Math.PI);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(pose.handX, pose.handY, 75, start, lerp(start, end, Math.max(0, t - .08)), pose.side < 0);
+      ctx.stroke();
+      ctx.restore();
+      if (t > .08) drawFrame(racketPose(player, clamp(t - .16, 0, 1)), .12, true);
+      if (t > .18) drawFrame(racketPose(player, clamp(t - .08, 0, 1)), .2, true);
+    }
+    drawFrame(pose);
   }
 
   function drawPlayer(player) {
@@ -898,6 +922,7 @@
     const side = player.side === 0 ? 1 : -1;
     const walk = Math.sin(state.clock * 13 + player.side) * player.moveBlend;
     const swing = player.swingTime > 0;
+    const pose = racketPose(player);
 
     drawShadow(player);
     ctx.save();
@@ -918,10 +943,10 @@
     const armY = shoulderY + 3;
     ctx.lineWidth = 4;
     if (swing) {
-      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(headX + side * 34, shoulderY - 28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 28, shoulderY + 24); ctx.stroke();
     } else {
-      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(headX + side * 30, shoulderY - 22); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 26, shoulderY + 18); ctx.stroke();
     }
 
@@ -963,7 +988,7 @@
       ctx.beginPath(); ctx.moveTo(headX + side * 5, headY + 5); ctx.lineTo(headX + side * 10, headY + 7); ctx.stroke();
     }
 
-    drawRacket(player);
+    drawRacket(player, pose);
     if (!player.onGround && player.y > 55) {
       ctx.globalAlpha = .32;
       ctx.strokeStyle = info.accent;
@@ -987,35 +1012,52 @@
 
     s.trail.forEach((p, i) => {
       if (p.life <= 0) return;
-      ctx.globalAlpha = p.life * .23;
-      ctx.fillStyle = i < 3 ? "#fff2dd" : "#f0af9e";
-      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1.2, p.size * (1 - i / 19)), 0, TAU); ctx.fill();
+      const alpha = p.life * (.34 - Math.min(i, 12) * .016);
+      ctx.save();
+      ctx.globalAlpha = Math.max(.04, alpha);
+      ctx.strokeStyle = i < 3 ? "#fff4d8" : "#e8a49a";
+      ctx.lineWidth = Math.max(1, p.size * (1 - i / 20));
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - s.vx * .025, p.y + s.vh * .025);
+      ctx.stroke();
+      ctx.restore();
     });
     ctx.globalAlpha = 1;
 
     const y = FLOOR - s.h;
     const speed = Math.hypot(s.vx, s.vh);
-    const scale = 1 + clamp(speed / 1700, 0, .26);
+    const scale = 1 + clamp(speed / 1700, 0, .24);
     const angle = Math.atan2(-s.vh, s.vx || 1);
     ctx.save();
     ctx.translate(s.x, y);
     ctx.rotate(angle);
     ctx.scale(scale, scale);
-    ctx.fillStyle = "#ee8584";
-    ctx.strokeStyle = "#fff3de";
-    ctx.lineWidth = 2;
-    ctx.shadowColor = s.hitFlash > 0 ? "#fff1a9" : "transparent";
-    ctx.shadowBlur = s.hitFlash > 0 ? 15 : 0;
-    ctx.beginPath(); ctx.arc(0, 0, 6.3, 0, TAU); ctx.fill(); ctx.stroke();
+    const impactGlow = s.hitFlash > 0;
+    ctx.fillStyle = "#ef8581";
+    ctx.strokeStyle = "#fff5df";
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = impactGlow ? "#fff1a9" : "transparent";
+    ctx.shadowBlur = impactGlow ? 16 : 0;
+    // The red cork leads the flight; the feather cone trails behind it.
+    ctx.beginPath(); ctx.arc(7, 0, 6.2, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "rgba(255,245,222,.98)";
+    ctx.strokeStyle = "#fff7e9";
     ctx.beginPath();
-    ctx.moveTo(-2, -4.5); ctx.lineTo(-21, -12); ctx.lineTo(-20, 12); ctx.closePath();
-    ctx.fillStyle = "#f6efe0"; ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = "#c7d0cb";
+    ctx.moveTo(3, -4.5);
+    ctx.bezierCurveTo(-5, -9, -20, -16, -30, -13);
+    ctx.quadraticCurveTo(-24, 0, -30, 13);
+    ctx.bezierCurveTo(-20, 16, -5, 9, 3, 4.5);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(178,181,166,.92)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(-7, -4); ctx.lineTo(-19, -8);
-    ctx.moveTo(-7, 4); ctx.lineTo(-19, 8);
-    ctx.moveTo(-8, 0); ctx.lineTo(-20, 0);
+    for (let i = -3; i <= 3; i++) {
+      ctx.moveTo(1, i * 2.1);
+      ctx.quadraticCurveTo(-13, i * 3.1, -27, i * 4.1);
+    }
     ctx.stroke();
     ctx.restore();
   }
@@ -1041,6 +1083,17 @@
           ctx.beginPath();
           ctx.moveTo(fx.x + Math.cos(a) * 12, fx.y + Math.sin(a) * 12);
           ctx.lineTo(fx.x + Math.cos(a) * (24 + t * 30), fx.y + Math.sin(a) * (24 + t * 30));
+          ctx.stroke();
+        }
+      }
+      if (fx.angle !== undefined) {
+        ctx.strokeStyle = fx.smash ? "#fff1a9" : "rgba(255,240,196,.78)";
+        ctx.lineWidth = fx.smash ? 2.6 : 1.5;
+        for (let i = -1; i <= 1; i++) {
+          const a = fx.angle + i * .24;
+          ctx.beginPath();
+          ctx.moveTo(fx.x + Math.cos(a) * 10, fx.y + Math.sin(a) * 10);
+          ctx.lineTo(fx.x + Math.cos(a) * (30 + t * (fx.smash ? 48 : 25)), fx.y + Math.sin(a) * (30 + t * (fx.smash ? 48 : 25)));
           ctx.stroke();
         }
       }
