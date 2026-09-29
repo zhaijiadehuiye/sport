@@ -20,6 +20,8 @@
   const SPRITE_SIZE = 226;
   const SPRITE_FEET_Y = 245;
   const SPRITE_SCALE = SPRITE_SIZE / 256;
+  const SWING_POSE_TIMES = [0, .18, .48, .76, 1];
+  const SWING_DRAW_TIMES = [.18, .48, .76, 1];
 
   const $ = (id) => document.getElementById(id);
   const keys = new Set();
@@ -40,6 +42,7 @@
   };
 
   const art = {
+    courtBackground: asset("assets/background/court-realistic.svg"),
     playerIdle: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-idle/idle-${n}.png`)),
     playerCoral: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-coral/idle-${n}.png`)),
     playerSky: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-sky/idle-${n}.png`)),
@@ -419,12 +422,20 @@
   function spriteRacketPose(player, overrideProgress = null) {
     const active = player.swingTime > 0 || overrideProgress !== null;
     const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
-    const frameIndex = active
-      ? clamp(Math.floor(progress * swingRacketFrames.length), 0, swingRacketFrames.length - 1)
-      : 0;
-    const frame = active
-      ? swingRacketFrames[frameIndex]
-      : (player.useOpponentIdle ? idleRacketLeft : idleRacketRight);
+    let frame;
+    if (active) {
+      const frameT = clamp(progress, 0, 1) * (swingRacketFrames.length - 1);
+      const from = Math.floor(frameT);
+      const to = Math.min(swingRacketFrames.length - 1, from + 1);
+      const mix = frameT - from;
+      const blend = (a, b) => [lerp(a[0], b[0], mix), lerp(a[1], b[1], mix)];
+      frame = {
+        hand: blend(swingRacketFrames[from].hand, swingRacketFrames[to].hand),
+        head: blend(swingRacketFrames[from].head, swingRacketFrames[to].head)
+      };
+    } else {
+      frame = player.useOpponentIdle ? idleRacketLeft : idleRacketRight;
+    }
     const flip = spriteShouldBeFlipped(player, active);
     const lean = clamp(player.vx / 800, -1, 1) * 4;
     const drawY = FLOOR - player.y - SPRITE_SIZE * (SPRITE_FEET_Y / 256);
@@ -799,6 +810,11 @@
   }
 
   function drawBackground() {
+    if (drawableReady(art.courtBackground)) {
+      ctx.drawImage(art.courtBackground, 0, 0, W, H);
+      return;
+    }
+
     const wall = ctx.createLinearGradient(0, 0, 0, 430);
     wall.addColorStop(0, "#727c7b");
     wall.addColorStop(.52, "#687371");
