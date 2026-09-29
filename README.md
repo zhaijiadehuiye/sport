@@ -1,6 +1,6 @@
 # Stick Figure Badminton II · HTML5 Replay
 
-这是一个放在本仓库里的纯 HTML5 Canvas 火柴人羽毛球游戏。它参考经典 Flash 版《Stick Figure Badminton》的操作与比赛节奏，用原创 Canvas 绘制实现，不依赖 Flash、Ruffle、外部图片或构建工具。
+这是一个放在本仓库里的纯 HTML5 火柴人羽毛球游戏。它参考经典 Flash 版《Stick Figure Badminton》的操作与比赛节奏，用 Canvas 负责物理与合成，并把逐帧角色、球拍、羽毛球和球馆素材接入运行时，不依赖 Flash、Ruffle 或构建工具。
 
 ## 直接运行
 
@@ -37,8 +37,8 @@ python3 -m http.server 8080
 - `index.html`：菜单、设置、比赛 HUD 和响应式页面
 - `styles.css`：深色 Flash 游戏机界面与移动端适配
 - `game.js`：Canvas 绘制、输入、物理、电脑 AI、得分和本地双人模式
-- `assets/`：仓库原有 Rally Club 素材（当前游戏核心使用 Canvas 原创绘制）
+- `assets/`：球员逐帧动作、球拍、羽毛球和室内球馆背景素材；击球碰撞点与攻击帧里的实际拍柄/拍头同步
 
 ## 说明
 
-这是受经典游戏玩法启发的非官方重制版，未复制原 Flash 的 SWF、图片或音频资源。
+这是受经典游戏玩法启发的非官方重制版，未复制原 Flash 的 SWF、图片或音频资源。角色、羽毛球和球馆画面均来自本项目自己的处理素材。
