@@ -20,6 +20,9 @@
   const SPRITE_SIZE = 226;
   const SPRITE_FEET_Y = 245;
   const SPRITE_SCALE = SPRITE_SIZE / 256;
+  const SERVE_READY_TIME = .88;
+  const SERVE_TOSS_TRIGGER = .50;
+  const SERVE_CONTACT_TIME = .38;
   const SWING_POSE_TIMES = [0, .18, .48, .76, 1];
   const SWING_DRAW_TIMES = [.18, .48, .76, 1];
 
@@ -51,6 +54,14 @@
     opponentIdle: [1, 2, 3, 4].map((n) => asset(`assets/processed/opponent-idle/idle-${n}.png`)),
     shuttle: [1, 2, 3, 4].map((n) => asset(`assets/processed/shuttle/projectile-${n}.png`))
   };
+  // Each source frame has a different orientation. Anchoring the physics
+  // point to the cork keeps the feathers behind the actual flight path.
+  const shuttleFrameMeta = [
+    { anchor: [.31, .70], corkAngle: 2.33 },
+    { anchor: [.22, .58], corkAngle: 2.87 },
+    { anchor: [.71, .69], corkAngle: .74 },
+    { anchor: [.77, .48], corkAngle: -.09 }
+  ];
   const drawableReady = (image) => Boolean(image && image.width > 0 && image.height > 0);
 
   const players = {
@@ -153,7 +164,11 @@
       trail: [],
       netHit: false,
       hitFlash: 0,
-      rotation: 0
+      rotation: 0,
+      servePhase: "held",
+      serveTossTime: 0,
+      serveAngle: Math.PI / 2,
+      displayFrame: 0
     };
   }
 
@@ -176,29 +191,75 @@
     $("modeLabel").textContent = state.mode === "local" ? "2 PLAYER" : "EXHIBITION";
   }
 
+  function ensureAudio() {
+    audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === "suspended") audioContext.resume();
+    return audioContext;
+  }
+
+  function playTone(startFrequency, endFrequency, duration, volume, wave = "triangle", delay = 0) {
+    const audio = ensureAudio();
+    const now = audio.currentTime + delay;
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.type = wave;
+    oscillator.frequency.setValueAtTime(startFrequency, now);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), now + duration);
+    gain.gain.setValueAtTime(.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + Math.min(.008, duration * .18));
+    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    oscillator.connect(gain).connect(audio.destination);
+    oscillator.start(now);
+    oscillator.stop(now + duration + .01);
+  }
+
+  function playNoise(duration, lowFrequency, highFrequency, volume, delay = 0) {
+    const audio = ensureAudio();
+    const sampleRate = audio.sampleRate;
+    const buffer = audio.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const envelope = 1 - i / data.length;
+      data[i] = (Math.random() * 2 - 1) * envelope * envelope;
+    }
+    const source = audio.createBufferSource();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    const now = audio.currentTime + delay;
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(Math.sqrt(lowFrequency * highFrequency), now);
+    filter.Q.setValueAtTime(1.15, now);
+    gain.gain.setValueAtTime(.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + Math.min(.006, duration * .15));
+    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(audio.destination);
+    source.start(now);
+    source.stop(now + duration + .01);
+  }
+
   function beep(type = "hit") {
     if (muted) return;
     try {
-      audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-      if (audioContext.state === "suspended") audioContext.resume();
-      const osc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      const now = audioContext.currentTime;
-      const config = type === "point"
-        ? { start: 190, end: 580, duration: .19, volume: .065 }
-        : type === "swing"
-          ? { start: 330, end: 160, duration: .055, volume: .028 }
-          : type === "smash"
-            ? { start: 520, end: 110, duration: .095, volume: .052 }
-            : { start: 240, end: 100, duration: .08, volume: .038 };
-      osc.type = "square";
-      osc.frequency.setValueAtTime(config.start, now);
-      osc.frequency.exponentialRampToValueAtTime(config.end, now + config.duration);
-      gain.gain.setValueAtTime(config.volume, now);
-      gain.gain.exponentialRampToValueAtTime(.0001, now + config.duration);
-      osc.connect(gain).connect(audioContext.destination);
-      osc.start(now);
-      osc.stop(now + config.duration);
+      if (type === "point") {
+        playTone(392, 520, .14, .035, "sine");
+        playTone(523, 784, .20, .028, "sine", .10);
+      } else if (type === "swing") {
+        playNoise(.095, 260, 1900, .018);
+        playTone(190, 88, .095, .012, "sine");
+      } else if (type === "serve") {
+        playNoise(.050, 1050, 3600, .035);
+        playTone(260, 132, .085, .025, "triangle");
+      } else if (type === "smash") {
+        playNoise(.075, 1500, 6200, .075);
+        playTone(620, 122, .115, .045, "sawtooth");
+      } else if (type === "net") {
+        playNoise(.035, 900, 2500, .018);
+        playTone(280, 210, .055, .012, "sine");
+      } else {
+        playNoise(.055, 1350, 4800, .046);
+        playTone(320, 145, .070, .030, "triangle");
+      }
     } catch (_) {}
   }
 
@@ -241,7 +302,7 @@
     state.screen = "match";
     state.serveSide = 0;
     state.shuttle = createShuttle();
-    state.serveTimer = .72;
+    state.serveTimer = SERVE_READY_TIME;
     state.flash = 0;
     state.particles = [];
     state.hitFx = [];
@@ -250,7 +311,6 @@
     setStatus("SERVE");
     showToast("READY", .72);
     canvas.focus();
-    beep("point");
   }
 
   function restartMatch() {
@@ -281,7 +341,7 @@
   function resetRally(winner) {
     state.serveSide = winner;
     state.shuttle = createShuttle();
-    state.serveTimer = .64;
+    state.serveTimer = SERVE_READY_TIME;
     state.pointPause = 0;
     state.flash = .15;
     state.players.forEach((p, side) => {
@@ -290,6 +350,7 @@
       p.vy = 0;
       p.vx = 0;
       p.swingTime = 0;
+      p.swingContacted = false;
       p.swingCooldown = 0;
       p.hitCooldown = 0;
       p.onGround = true;
@@ -305,6 +366,7 @@
     state.shuttle.vx = 0;
     state.shuttle.vh = 0;
     state.shuttle.trail = [];
+    state.shuttle.servePhase = "point";
     updateScoreHud();
     setStatus(winner === 0 ? "POINT P1" : "POINT P2");
     showToast(winner === 0 ? "POINT  P1" : "POINT  P2", .86);
@@ -323,8 +385,9 @@
       return true;
     }
     if (state.serveTimer > 0) {
+      updateServeAnimation(dt);
       state.serveTimer -= dt;
-      if (state.serveTimer <= 0) serve();
+      if (state.serveTimer <= 0 && state.shuttle?.servePhase !== "flight") serve();
       return true;
     }
     return false;
@@ -334,17 +397,96 @@
     const server = state.players[state.serveSide];
     const direction = server.side === 0 ? 1 : -1;
     const s = state.shuttle;
-    s.x = server.x + direction * 42;
-    s.h = 142;
+    s.x = server.x + direction * 58;
+    s.h = 150;
     s.vx = direction * 690;
     s.vh = 650;
+    s.lastX = s.x;
+    s.lastH = s.h;
     s.lastHit = server.side;
     s.age = 0;
     s.trail = [];
     s.netHit = false;
+    s.servePhase = "flight";
+    s.serveTossTime = 0;
+    s.displayFrame = 0;
+    s.rotation = direction * .18;
+    state.serveTimer = 0;
+    server.swingTime = Math.max(server.swingTime, .34);
+    server.swingCooldown = Math.max(server.swingCooldown, .23);
+    server.swingContacted = true;
     setStatus("RALLY");
     showToast("PLAY", .45);
-    beep("hit");
+    beep("serve");
+  }
+
+  function spritePointToWorld(player, point, active = false) {
+    const flip = spriteShouldBeFlipped(player, active);
+    const lean = clamp(player.vx / 800, -1, 1) * 4;
+    const drawY = FLOOR - player.y - SPRITE_SIZE * (SPRITE_FEET_Y / 256);
+    return {
+      x: player.x + lean + (flip ? 256 - point[0] : point[0]) * SPRITE_SCALE - 128 * SPRITE_SCALE,
+      y: drawY + point[1] * SPRITE_SCALE
+    };
+  }
+
+  function serveHandWorld(player) {
+    // The non-racket hand is the launch point. The opponent idle art already
+    // faces left, so its free hand uses the right side of the source frame.
+    const hand = player.useOpponentIdle ? [164, 134] : [101, 134];
+    return spritePointToWorld(player, hand, false);
+  }
+
+  function beginServeSwing(player) {
+    if (!player || player.swingTime > 0) return;
+    player.swingTime = player.swingDuration;
+    player.swingCooldown = .23;
+    player.swingContacted = true;
+    beep("swing");
+  }
+
+  function updateServeAnimation(dt) {
+    const s = state.shuttle;
+    const server = state.players[state.serveSide];
+    if (!s || !server || s.servePhase === "flight") return;
+
+    if (s.servePhase === "held" && state.serveTimer <= SERVE_TOSS_TRIGGER) {
+      s.servePhase = "toss";
+      s.serveTossTime = 0;
+      s.rotation = 0;
+    }
+
+    const hand = serveHandWorld(server);
+    const direction = server.side === 0 ? 1 : -1;
+    if (s.servePhase === "held") {
+      s.x = hand.x;
+      s.h = FLOOR - hand.y;
+      s.lastX = s.x;
+      s.lastH = s.h;
+      s.displayFrame = 0;
+      s.rotation = 0;
+      return;
+    }
+
+    s.serveTossTime += dt;
+    const t = clamp(s.serveTossTime / SERVE_CONTACT_TIME, 0, 1);
+    if (s.serveTossTime >= .14 && server.swingTime <= 0) beginServeSwing(server);
+
+    // A short, visible underhand toss: rise first, then drop into the
+    // forward swing instead of teleporting from the player's hand.
+    const tossT = clamp(t / .72, 0, 1);
+    const dropT = clamp((t - .72) / .28, 0, 1);
+    const tossHeight = t < .72
+      ? lerp(FLOOR - hand.y, 188, 1 - Math.pow(1 - tossT, 2))
+      : lerp(188, 150, dropT * dropT);
+    s.x = lerp(hand.x, server.x + direction * 58, t);
+    s.h = tossHeight;
+    s.lastX = s.x;
+    s.lastH = s.h;
+    s.displayFrame = 0;
+    s.rotation = 0;
+
+    if (s.serveTossTime >= SERVE_CONTACT_TIME) serve();
   }
 
   function held(player, action) {
@@ -367,7 +509,6 @@
     player.vy = player.jumpSpeed;
     player.onGround = false;
     player.moveBlend = Math.max(player.moveBlend, .55);
-    beep("swing");
   }
 
   function beginSwing(player) {
@@ -755,7 +896,7 @@
         s.netHit = true;
         showToast("NET", .32);
         hitBurst(NET_X, FLOOR - s.h, "#65b9cc", 8, false);
-        beep("hit");
+        beep("net");
       }
     }
 
@@ -1195,14 +1336,16 @@
   function drawShuttle() {
     const s = state.shuttle;
     if (!s) return;
-    ctx.save();
-    const shadowScale = clamp(1 - s.h / 420, .18, 1);
-    ctx.globalAlpha = .24 * shadowScale;
-    ctx.fillStyle = "#211b13";
-    ctx.beginPath();
-    ctx.ellipse(s.x, FLOOR + 3, 8 + shadowScale * 10, 2.5, 0, 0, TAU);
-    ctx.fill();
-    ctx.restore();
+    if (s.servePhase === "flight") {
+      ctx.save();
+      const shadowScale = clamp(1 - s.h / 420, .18, 1);
+      ctx.globalAlpha = .24 * shadowScale;
+      ctx.fillStyle = "#211b13";
+      ctx.beginPath();
+      ctx.ellipse(s.x, FLOOR + 3, 8 + shadowScale * 10, 2.5, 0, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
 
     s.trail.forEach((p, i) => {
       if (p.life <= 0) return;
@@ -1222,20 +1365,25 @@
 
     const y = FLOOR - s.h;
     const speed = Math.hypot(s.vx, s.vh);
-    const shuttleFrame = art.shuttle[Math.floor(state.clock * 14 + Math.abs(s.rotation) * 3) % art.shuttle.length];
+    const inFlight = s.servePhase === "flight";
+    const rotation = ((s.rotation % TAU) + TAU) % TAU;
+    const frameIndex = inFlight
+      ? Math.floor(rotation / (TAU / art.shuttle.length)) % art.shuttle.length
+      : s.displayFrame;
+    const shuttleFrame = art.shuttle[frameIndex];
     if (drawableReady(shuttleFrame)) {
-      const size = clamp(48 + speed / 48, 48, 72);
-      const flightAngle = Math.atan2(-s.vh, s.vx || 1);
-      // The source sprite points its cork down-left. Rotate that axis onto
-      // the actual velocity so the cork always leads the flight.
-      const spriteAxis = 2.31;
+      const size = inFlight ? clamp(48 + speed / 48, 48, 72) : 38;
+      const meta = shuttleFrameMeta[frameIndex] || shuttleFrameMeta[0];
+      const flightAngle = inFlight ? Math.atan2(-s.vh, s.vx || 1) : s.serveAngle;
       ctx.save();
       ctx.translate(s.x, y);
-      ctx.rotate(flightAngle - spriteAxis);
+      ctx.rotate(flightAngle - meta.corkAngle);
       ctx.globalAlpha = .96;
       ctx.shadowColor = s.hitFlash > 0 ? "rgba(255,239,166,.95)" : "rgba(255,255,255,.12)";
-      ctx.shadowBlur = s.hitFlash > 0 ? 18 : 2;
-      ctx.drawImage(shuttleFrame, -size / 2, -size / 2, size, size);
+      ctx.shadowBlur = s.hitFlash > 0 ? 18 : inFlight ? 2 : 0;
+      // Draw from the cork anchor, so the point used by the physics is the
+      // same point the player tosses and the racket actually meets.
+      ctx.drawImage(shuttleFrame, -meta.anchor[0] * size, -meta.anchor[1] * size, size, size);
       ctx.restore();
       return;
     }
