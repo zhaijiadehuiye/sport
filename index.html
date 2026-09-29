@@ -2,54 +2,139 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#102f35" />
-  <title>RALLY CLUB · 羽毛球</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#171a1c" />
+  <meta name="description" content="A fan-made HTML5 recreation of the classic stick figure badminton Flash game." />
+  <title>Stick Figure Badminton II · HTML5 Replay</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="grain"></div>
-  <header class="topbar">
-    <a class="brand" href="#top" aria-label="Rally Club 首页"><span class="brand-mark">RC</span><span>RALLY <em>CLUB</em></span></a>
-    <nav class="sport-nav" aria-label="运动项目">
-      <button class="sport-tab active" data-sport="badminton"><span class="tab-dot"></span>羽毛球</button>
-      <button class="sport-tab locked" data-sport="table"><span class="tab-dot"></span>乒乓球<small>SOON</small></button>
-      <button class="sport-tab locked" data-sport="tennis"><span class="tab-dot"></span>网球<small>SOON</small></button>
-    </nav>
-    <div class="top-actions"><button class="sound" id="soundBtn" aria-label="切换声音">◖)))</button><span class="season">SEASON 01 · 训练场</span></div>
-  </header>
+  <main class="page-shell">
+    <header class="site-header">
+      <div class="site-brand"><span class="brand-mark">SF</span><span>STICK FIGURE BADMINTON <b>II</b></span></div>
+      <div class="header-note">UNOFFICIAL HTML5 REPLAY · 2026</div>
+    </header>
 
-  <main id="top">
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow"><span></span> BADMINTON / 01</p>
-        <h1>轻盈起跳，<br><i>精准落点。</i></h1>
-        <p class="lede">在晨雾和木地板的回声里，打出你的第一记漂亮回球。移动、蓄力、扣杀，赢下这一局。</p>
-        <div class="hero-actions"><button class="primary-btn" id="playBtn">开始比赛 <span>↗</span></button><a class="text-link" href="#how">怎么玩 <span>↓</span></a></div>
-        <div class="hero-meta"><div><strong>2</strong><span>选手</span></div><div><strong>21</strong><span>目标分</span></div><div><strong>∞</strong><span>回合</span></div></div>
+    <section class="cabinet" aria-label="火柴人羽毛球游戏">
+      <div class="cabinet-topline">
+        <span>NEBOOLA-STYLE COURT SIMULATION</span>
+        <span id="connectionLight" class="connection"><i></i> LOCAL PLAY</span>
       </div>
-      <div class="hero-art" aria-hidden="true">
-        <img class="hero-showcase" src="assets/processed/player-swing/attack-3.png" alt="生成的羽毛球运动员挥拍动作" />
-        <div class="hero-badge">PLAY<br><span>WITH FEEL</span></div>
-        <div class="hero-stat"><span class="tiny-label">NEXT UP</span><strong>FOREHAND</strong><span class="stat-line"></span><span class="tiny-label">A CLEAN HIT</span></div>
+
+      <div class="game-frame">
+        <canvas id="court" width="960" height="540" tabindex="0" aria-label="火柴人羽毛球球场"></canvas>
+
+        <div class="hud hud-left" aria-hidden="true">
+          <div>P: PAUSE</div>
+          <div>M: MUTE</div>
+          <div>ESC: EXIT</div>
+        </div>
+        <div class="hud hud-right" aria-hidden="true">RALLY <b>CLUB</b></div>
+
+        <div id="menuOverlay" class="screen-overlay visible">
+          <div class="menu-card">
+            <p class="kicker">THE CLASSIC RETURNS</p>
+            <h1>STICK FIGURE<br /><em>BADMINTON II</em></h1>
+            <p class="menu-copy">火柴人羽毛球 · HTML5 重制版</p>
+            <div class="menu-divider"></div>
+            <div class="menu-actions">
+              <button class="game-button primary" id="exhibitionBtn">EXHIBITION <small>单人 · 对战电脑</small></button>
+              <button class="game-button" id="localBtn">2 PLAYER <small>本地双人</small></button>
+            </div>
+            <button class="plain-button" id="howBtn">HOW TO PLAY / 玩法说明</button>
+            <p class="menu-foot">FIRST TO 7 POINTS WINS · EACH RALLY COUNTS</p>
+          </div>
+        </div>
+
+        <div id="setupOverlay" class="screen-overlay">
+          <div class="setup-card">
+            <button class="corner-close" id="setupBack" aria-label="返回主菜单">×</button>
+            <p class="kicker">MATCH SETUP</p>
+            <h2 id="setupTitle">EXHIBITION</h2>
+            <div class="setup-grid">
+              <label class="setup-option">
+                <span>YOUR PLAYER</span>
+                <select id="playerSelect">
+                  <option value="sam">Top Hat Sam</option>
+                  <option value="red">The Red Dude</option>
+                  <option value="robot">Robotron</option>
+                </select>
+              </label>
+              <label class="setup-option" id="opponentSetup">
+                <span>OPPONENT</span>
+                <select id="opponentSelect">
+                  <option value="red">The Red Dude</option>
+                  <option value="sam">Top Hat Sam</option>
+                  <option value="robot">Robotron</option>
+                </select>
+              </label>
+              <label class="setup-option" id="difficultySetup">
+                <span>AI DIFFICULTY</span>
+                <select id="difficultySelect">
+                  <option value="0.72">ROOKIE</option>
+                  <option value="0.86" selected>PRO</option>
+                  <option value="1">NIGHTMARE</option>
+                </select>
+              </label>
+            </div>
+            <div class="setup-controls">
+              <div class="control-mini"><b>P1</b><span>A / D move</span><span>W jump</span><span>S or SPACE swing</span></div>
+              <div class="control-mini"><b>P2</b><span>← / → move</span><span>↑ jump</span><span>↓ swing</span></div>
+            </div>
+            <button class="game-button primary wide" id="startMatchBtn">START MATCH <small>开始比赛</small></button>
+          </div>
+        </div>
+
+        <div id="howOverlay" class="screen-overlay">
+          <div class="how-card">
+            <button class="corner-close" id="howBack" aria-label="返回主菜单">×</button>
+            <p class="kicker">HOW TO PLAY</p>
+            <h2>把球打过网</h2>
+            <div class="how-columns">
+              <div><strong>移动</strong><p>A / D 或方向键左右移动。W / ↑ 跳跃。</p></div>
+              <div><strong>挥拍</strong><p>S / SPACE 或 ↓ 在羽毛球靠近时挥拍。</p></div>
+              <div><strong>得分</strong><p>球落在你这一侧，对手得分；先拿到 7 分获胜。</p></div>
+              <div><strong>节奏</strong><p>跳起来击球会更快更低，贴近球拍甜区才能打出好球。</p></div>
+            </div>
+            <button class="game-button wide" id="howStartBtn">PLAY EXHIBITION <small>开始单人比赛</small></button>
+          </div>
+        </div>
+
+        <div id="pauseOverlay" class="screen-overlay">
+          <div class="pause-card">
+            <p class="kicker">MATCH PAUSED</p>
+            <h2>PAUSED</h2>
+            <button class="game-button primary wide" id="resumeBtn">RESUME <small>继续</small></button>
+            <button class="plain-button" id="pauseExitBtn">EXIT TO MENU / 返回菜单</button>
+          </div>
+        </div>
+
+        <div id="resultOverlay" class="screen-overlay">
+          <div class="result-card">
+            <p class="kicker" id="resultKicker">MATCH COMPLETE</p>
+            <h2 id="resultTitle">YOU WIN</h2>
+            <div class="result-score"><span id="resultPlayerScore">7</span><b>—</b><span id="resultOpponentScore">4</span></div>
+            <p id="resultCopy">A clean exhibition win.</p>
+            <div class="result-actions"><button class="game-button primary" id="rematchBtn">REMATCH <small>再来一局</small></button><button class="game-button" id="resultMenuBtn">MENU <small>返回菜单</small></button></div>
+          </div>
+        </div>
+
+        <div class="touch-controls" aria-hidden="true">
+          <div class="touch-left"><button data-key="left">◀</button><button data-key="jump">▲</button><button data-key="right">▶</button></div>
+          <button class="touch-swing" data-key="swing">SWING</button>
+        </div>
+      </div>
+
+      <div class="cabinet-footer">
+        <div><span class="footer-label">MATCH</span><strong id="modeLabel">EXHIBITION</strong></div>
+        <div><span class="footer-label">SCORE</span><strong id="scoreLabel">0 — 0</strong></div>
+        <div><span class="footer-label">STATUS</span><strong id="statusLabel">READY</strong></div>
+        <button id="fullscreenBtn" class="footer-button">FULLSCREEN ↗</button>
       </div>
     </section>
 
-    <section class="game-section" id="game">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> THE TRAINING COURT</p><h2>晨光球场 <span>/ 01</span></h2></div><div class="status-pill"><span></span><span id="gameStatus">准备开球</span></div></div>
-      <div class="game-card">
-        <div class="score-strip"><div class="player-chip"><span class="chip-avatar you">Y</span><div><small>YOU</small><strong id="playerScore">00</strong></div></div><div class="match-label"><span>ROUND <b id="roundNumber">01</b></span><strong id="rallyLabel">READY?</strong></div><div class="player-chip opponent"><div><small>OPPONENT</small><strong id="opponentScore">00</strong></div><span class="chip-avatar rival">M</span></div></div>
-        <div class="court-wrap"><canvas id="court" aria-label="羽毛球比赛场地"></canvas><div class="court-hint" id="courtHint"><span class="key">A</span><span class="key">D</span> 移动　<span class="key wide">SPACE</span> 击球</div><div class="serve-toast" id="serveToast">准备发球</div></div>
-        <div class="game-controls"><div class="control-group"><span class="control-label">YOUR KIT</span><div class="swatches" role="group" aria-label="选择服装"><button class="swatch mint selected" data-kit="mint" aria-label="薄荷绿"></button><button class="swatch coral" data-kit="coral" aria-label="珊瑚红"></button><button class="swatch sky" data-kit="sky" aria-label="天空蓝"></button><button class="swatch lemon" data-kit="mint" aria-label="柠檬黄（即将开放）"></button></div></div><div class="control-center"><span class="rally-meter-label">RALLY ENERGY</span><div class="meter"><span id="energyBar"></span></div></div><button class="restart-btn" id="restartBtn">重新开始 <span>↻</span></button></div>
-      </div>
-    </section>
-
-    <section class="how-section" id="how"><div class="how-head"><p class="eyebrow"><span></span> SMALL MOVES, BIG RALLIES</p><h2>把每一拍，<i>打出自己的节奏。</i></h2></div><div class="how-grid"><article><span class="step-num">01</span><div class="step-icon">↔</div><h3>贴着底线移动</h3><p>用 A / D 或方向键左右移动。保持在落点附近，给自己留出蓄力空间。</p></article><article><span class="step-num">02</span><div class="step-icon">⌁</div><h3>看准再挥拍</h3><p>按下 SPACE，在羽球靠近时击球。越接近甜区，回球越快、越刁钻。</p></article><article><span class="step-num">03</span><div class="step-icon">✦</div><h3>赢下 21 分</h3><p>先拿到 21 分就赢得比赛。连击会提升能量，让下一拍更有力量。</p></article></div></section>
+    <footer class="site-footer"><span>RALLY CLUB / STICK FIGURE BADMINTON REPLAY</span><span>ORIGINAL GAMEPLAY INSPIRED · ORIGINAL CANVAS ART</span></footer>
   </main>
-  <footer><span>RALLY CLUB © 2026</span><span>DESIGNED FOR THE NEXT POINT</span><span>BADMINTON / TABLE TENNIS / TENNIS</span></footer>
   <script src="game.js"></script>
 </body>
 </html>
