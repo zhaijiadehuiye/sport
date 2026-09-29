@@ -560,7 +560,10 @@
     const s = state.shuttle;
     if (!s || player.swingContacted || !canReceive(player, s)) return false;
     const progress = 1 - player.swingTime / player.swingDuration;
-    if (progress < .14 || progress > .84) return false;
+    // Contact is restricted to the racket's forward stroke. The late
+    // follow-through is still rendered, but it can no longer create a hit
+    // after the visible racket has already passed the shuttle.
+    if (progress < .24 || progress > .76) return false;
 
     const pose = racketPose(player, progress);
     const bx = s.x;
@@ -701,11 +704,11 @@
       const needJump = intercept.h > player.y + 214 && intercept.t < .8;
       if (needJump && player.onGround && player.swingCooldown <= 0) jump(player);
       const timeToContact = intercept.t;
-      if (timeToContact < .27 && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 118) beginSwing(player);
+      if (timeToContact < .19 && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 118) beginSwing(player);
     }
 
     const currentDistance = Math.hypot(s.x - (player.x + hitDirection * racketLead), (FLOOR - s.h) - (FLOOR - player.y - 100));
-    if (incoming && currentDistance < 130 && s.h < 250 && s.h > 90 && s.vh < 250) beginSwing(player);
+    if (!intercept && incoming && currentDistance < 112 && s.h < 215 && s.h > 105 && s.vh < 160) beginSwing(player);
   }
 
   function updateShuttle(dt) {
