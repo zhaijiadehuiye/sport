@@ -103,6 +103,8 @@
       info,
       name: info.name,
       moveBlend: 0,
+      tapLeft: 0,
+      tapRight: 0,
       aiSeed: side * 2.71 + Math.random() * 6,
       aiThink: 0,
       scoreFlash: 0
@@ -350,7 +352,11 @@
   }
 
   function updateHuman(player, dt) {
-    const dir = (held(player, "right") ? 1 : 0) - (held(player, "left") ? 1 : 0);
+    player.tapLeft = Math.max(0, player.tapLeft - dt);
+    player.tapRight = Math.max(0, player.tapRight - dt);
+    const left = held(player, "left") || player.tapLeft > 0;
+    const right = held(player, "right") || player.tapRight > 0;
+    const dir = (right ? 1 : 0) - (left ? 1 : 0);
     const wanted = dir * player.maxSpeed;
     if (dir) {
       player.vx = approach(player.vx, wanted, player.acceleration * dt);
@@ -1096,7 +1102,14 @@
 
   function addKey(event) {
     keys.add(event.code);
-    if (event.key && event.key.length === 1) keys.add(event.key.toLowerCase());
+    const key = (event.key || "").toLowerCase();
+    if (key.length === 1) keys.add(key);
+    const p1 = state.players[0];
+    const p2 = state.players[1];
+    if (event.code === "KeyA" || key === "a") p1.tapLeft = .16;
+    if (event.code === "KeyD" || key === "d") p1.tapRight = .16;
+    if (p2 && (event.code === "ArrowLeft" || key === "arrowleft")) p2.tapLeft = .16;
+    if (p2 && (event.code === "ArrowRight" || key === "arrowright")) p2.tapRight = .16;
   }
 
   function removeKey(event) {
