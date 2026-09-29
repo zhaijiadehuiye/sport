@@ -563,7 +563,8 @@
     // Contact is restricted to the racket's forward stroke. The late
     // follow-through is still rendered, but it can no longer create a hit
     // after the visible racket has already passed the shuttle.
-    if (progress < .24 || progress > .76) return false;
+    const latestContactFrame = player.human ? .84 : .76;
+    if (progress < .24 || progress > latestContactFrame) return false;
 
     const pose = racketPose(player, progress);
     const bx = s.x;
