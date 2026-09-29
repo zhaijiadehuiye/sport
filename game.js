@@ -7,25 +7,32 @@
   const H = 540;
   const FLOOR = 462;
   const NET_X = 480;
-  const NET_TOP = 335;
+  const NET_TOP = 334;
+  const NET_HEIGHT = FLOOR - NET_TOP;
   const WALL_L = 42;
   const WALL_R = 918;
-  const GRAVITY = 920;
+  const GRAVITY = 1220;
+  const JUMP_GRAVITY = 1700;
+  const SHUTTLE_DRAG = 0.82;
+  const SHUTTLE_VERTICAL_DRAG = 0.14;
   const WIN_SCORE = 7;
   const TAU = Math.PI * 2;
 
   const $ = (id) => document.getElementById(id);
-  const overlays = ["menuOverlay", "setupOverlay", "howOverlay", "pauseOverlay", "resultOverlay"];
-  const keySet = new Set();
-  const pressed = new Set();
+  const keys = new Set();
   const rand = (a, b) => a + Math.random() * (b - a);
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
   const lerp = (a, b, t) => a + (b - a) * t;
+  const approach = (value, target, amount) => {
+    if (value < target) return Math.min(value + amount, target);
+    if (value > target) return Math.max(value - amount, target);
+    return target;
+  };
 
   const players = {
-    sam: { name: "Top Hat Sam", kind: "sam", accent: "#f2efe5", body: "#111416", head: "#f6f2e8" },
-    red: { name: "The Red Dude", kind: "red", accent: "#ef3940", body: "#101314", head: "#ef3940" },
-    robot: { name: "Robotron", kind: "robot", accent: "#3fa6c4", body: "#162b31", head: "#9fd6df" }
+    sam: { name: "Top Hat Sam", kind: "sam", accent: "#f1e9d1", body: "#101417", head: "#f3ecdd" },
+    red: { name: "The Red Dude", kind: "red", accent: "#f33f48", body: "#101417", head: "#e93b45" },
+    robot: { name: "Robotron", kind: "robot", accent: "#55c0d4", body: "#142b32", head: "#9bdce3" }
   };
 
   const confetti = Array.from({ length: 130 }, (_, i) => ({
@@ -33,79 +40,100 @@
     y: 47 + ((i * 47) % 278),
     size: i % 7 === 0 ? 4 : 3,
     color: ["#e55b5c", "#e2c34d", "#4b9bb5", "#bd69a5", "#75b77b", "#e6e0c9"][i % 6],
-    alpha: .34 + (i % 4) * .08,
+    alpha: .28 + (i % 4) * .08,
     phase: i * .37
   }));
 
   const grainDots = Array.from({ length: 900 }, (_, i) => ({
     x: (i * 97) % W,
     y: (i * 53) % 423,
-    a: .025 + ((i * 11) % 7) * .008
+    a: .022 + ((i * 11) % 7) * .008
   }));
-
-  let audioContext = null;
-  let muted = false;
-  let lastTime = 0;
-  let rafId = 0;
 
   const state = {
     screen: "menu",
     mode: "exhibition",
     score: [0, 0],
-    round: 0,
-    rally: 0,
     serveSide: 0,
     serveTimer: 0,
     pointPause: 0,
     pointWinner: null,
+    matchWinner: null,
+    rally: 0,
     toast: "",
     toastTimer: 0,
-    matchWinner: null,
-    aiSkill: .86,
+    aiSkill: .96,
     playerChoice: "sam",
     opponentChoice: "red",
     players: [],
     shuttle: null,
     particles: [],
+    hitFx: [],
     clock: 0,
     matchConfig: null,
-    flash: 0
+    flash: 0,
+    lastTime: 0
   };
+
+  let audioContext = null;
+  let muted = false;
+  let rafId = 0;
 
   function createPlayer(side, choice, human) {
     const info = players[choice] || players.sam;
     return {
       side,
       x: side === 0 ? 205 : 755,
-      homeX: side === 0 ? 205 : 755,
-      y: FLOOR,
+      y: 0,
       vy: 0,
-      speed: 255,
+      vx: 0,
+      maxSpeed: 375,
+      acceleration: 2700,
+      friction: 3100,
+      jumpSpeed: 720,
       onGround: true,
-      swing: 0,
+      swingTime: 0,
+      swingDuration: .27,
+      swingContacted: false,
       swingCooldown: 0,
       hitCooldown: 0,
-      hasHitSwing: false,
-      moveBlend: 0,
       facing: side === 0 ? 1 : -1,
       human,
       choice,
       info,
       name: info.name,
+      moveBlend: 0,
+      aiSeed: side * 2.71 + Math.random() * 6,
+      aiThink: 0,
       scoreFlash: 0
     };
   }
 
   function createShuttle() {
-    return { x: state.serveSide === 0 ? 249 : 711, y: FLOOR - 111, vx: 0, vy: 0, lastHit: -1, age: 0, trail: [], netHit: false };
+    return {
+      x: state.serveSide === 0 ? 250 : 710,
+      h: 128,
+      vx: 0,
+      vh: 0,
+      lastX: 250,
+      lastH: 128,
+      lastHit: -1,
+      age: 0,
+      trail: [],
+      netHit: false,
+      hitFlash: 0,
+      rotation: 0
+    };
   }
 
   function showOnly(id) {
-    overlays.forEach((name) => $(name).classList.toggle("visible", name === id));
+    ["menuOverlay", "setupOverlay", "howOverlay", "pauseOverlay", "resultOverlay"]
+      .forEach((name) => $(name).classList.toggle("visible", name === id));
   }
 
   function hideOverlays() {
-    overlays.forEach((name) => $(name).classList.remove("visible"));
+    ["menuOverlay", "setupOverlay", "howOverlay", "pauseOverlay", "resultOverlay"]
+      .forEach((name) => $(name).classList.remove("visible"));
   }
 
   function setStatus(value) {
@@ -129,7 +157,9 @@
         ? { start: 190, end: 580, duration: .19, volume: .065 }
         : type === "swing"
           ? { start: 330, end: 160, duration: .055, volume: .028 }
-          : { start: 240, end: 100, duration: .08, volume: .038 };
+          : type === "smash"
+            ? { start: 520, end: 110, duration: .095, volume: .052 }
+            : { start: 240, end: 100, duration: .08, volume: .038 };
       osc.type = "square";
       osc.frequency.setValueAtTime(config.start, now);
       osc.frequency.exponentialRampToValueAtTime(config.end, now + config.duration);
@@ -146,17 +176,6 @@
     state.toastTimer = duration;
   }
 
-  function openSetup(mode) {
-    state.mode = mode;
-    $("setupTitle").textContent = mode === "local" ? "2 PLAYER" : "EXHIBITION";
-    $("difficultySetup").style.display = mode === "local" ? "none" : "";
-    $("opponentSetup").querySelector("span").textContent = mode === "local" ? "PLAYER 2" : "OPPONENT";
-    $("opponentSelect").innerHTML = mode === "local"
-      ? '<option value="red">The Red Dude</option><option value="sam">Top Hat Sam</option><option value="robot">Robotron</option>'
-      : '<option value="red">The Red Dude</option><option value="sam">Top Hat Sam</option><option value="robot">Robotron</option>';
-    showOnly("setupOverlay");
-  }
-
   function menu() {
     state.screen = "menu";
     state.matchWinner = null;
@@ -166,32 +185,39 @@
     showOnly("menuOverlay");
   }
 
+  function openSetup(mode) {
+    state.mode = mode;
+    $("setupTitle").textContent = mode === "local" ? "2 PLAYER" : "EXHIBITION";
+    $("difficultySetup").style.display = mode === "local" ? "none" : "";
+    $("opponentSetup").querySelector("span").textContent = mode === "local" ? "PLAYER 2" : "OPPONENT";
+    showOnly("setupOverlay");
+  }
+
   function startMatch() {
-    const playerChoice = $("playerSelect").value;
-    const opponentChoice = $("opponentSelect").value;
     state.mode = state.mode === "local" ? "local" : "exhibition";
-    state.playerChoice = playerChoice;
-    state.opponentChoice = opponentChoice;
-    state.aiSkill = Number($("difficultySelect").value) || .86;
+    state.playerChoice = $("playerSelect").value;
+    state.opponentChoice = $("opponentSelect").value;
+    state.aiSkill = Number($("difficultySelect").value) || .96;
     state.score = [0, 0];
-    state.round = 0;
     state.rally = 0;
     state.pointWinner = null;
     state.pointPause = 0;
     state.matchWinner = null;
     state.players = [
-      createPlayer(0, playerChoice, true),
-      createPlayer(1, opponentChoice, state.mode === "local")
+      createPlayer(0, state.playerChoice, true),
+      createPlayer(1, state.opponentChoice, state.mode === "local")
     ];
     state.screen = "match";
     state.serveSide = 0;
     state.shuttle = createShuttle();
-    state.serveTimer = 1.05;
+    state.serveTimer = .72;
     state.flash = 0;
+    state.particles = [];
+    state.hitFx = [];
     updateScoreHud();
     hideOverlays();
     setStatus("SERVE");
-    showToast("READY", .8);
+    showToast("READY", .72);
     canvas.focus();
     beep("point");
   }
@@ -200,13 +226,13 @@
     if (state.matchConfig) {
       $("playerSelect").value = state.matchConfig.player;
       $("opponentSelect").value = state.matchConfig.opponent;
-      if (state.matchConfig.mode === "local") state.mode = "local";
-      else state.mode = "exhibition";
+      state.mode = state.matchConfig.mode;
     }
     startMatch();
   }
 
   function finishMatch() {
+    if (state.screen === "result") return;
     state.screen = "result";
     state.matchWinner = state.score[0] >= WIN_SCORE ? 0 : 1;
     $("resultTitle").textContent = state.matchWinner === 0 ? "YOU WIN" : "YOU LOSE";
@@ -218,21 +244,24 @@
     showOnly("resultOverlay");
     setStatus(state.matchWinner === 0 ? "WINNER" : "DEFEAT");
     beep("point");
-    burst(state.matchWinner === 0 ? 180 : 110, state.matchWinner === 0 ? "#ef3940" : "#6c8584");
+    burst(state.matchWinner === 0 ? 480 : 720, FLOOR - 100, state.matchWinner === 0 ? "#ef3940" : "#6c8584", 150);
   }
 
   function resetRally(winner) {
-    state.round += 1;
-    state.rally = 0;
     state.serveSide = winner;
     state.shuttle = createShuttle();
-    state.serveTimer = .92;
+    state.serveTimer = .64;
     state.pointPause = 0;
-    state.flash = .17;
-    state.players[0].x = 205;
-    state.players[1].x = 755;
-    state.players.forEach((p) => {
-      p.y = FLOOR; p.vy = 0; p.swing = 0; p.swingCooldown = 0; p.hitCooldown = 0; p.onGround = true;
+    state.flash = .15;
+    state.players.forEach((p, side) => {
+      p.x = side === 0 ? 205 : 755;
+      p.y = 0;
+      p.vy = 0;
+      p.vx = 0;
+      p.swingTime = 0;
+      p.swingCooldown = 0;
+      p.hitCooldown = 0;
+      p.onGround = true;
     });
   }
 
@@ -240,19 +269,17 @@
     if (state.screen !== "match" || state.pointPause > 0) return;
     state.score[winner] += 1;
     state.pointWinner = winner;
-    state.pointPause = .95;
+    state.pointPause = .92;
     state.rally = 0;
     state.shuttle.vx = 0;
-    state.shuttle.vy = 0;
+    state.shuttle.vh = 0;
     state.shuttle.trail = [];
     updateScoreHud();
     setStatus(winner === 0 ? "POINT P1" : "POINT P2");
     showToast(winner === 0 ? "POINT  P1" : "POINT  P2", .86);
-    burst(state.shuttle.x, FLOOR - 8, winner === 0 ? "#ef3940" : "#3ea6c4");
+    burst(state.shuttle.x, FLOOR - 8, winner === 0 ? "#ef3940" : "#3ea6c4", 26);
     beep("point");
-    if (state.score[winner] >= WIN_SCORE) {
-      window.setTimeout(finishMatch, 680);
-    }
+    if (state.score[winner] >= WIN_SCORE) window.setTimeout(finishMatch, 650);
   }
 
   function startRallyIfReady(dt) {
@@ -275,195 +302,340 @@
   function serve() {
     const server = state.players[state.serveSide];
     const direction = server.side === 0 ? 1 : -1;
-    state.shuttle.x = server.x + direction * 40;
-    state.shuttle.y = server.y - 95;
-    state.shuttle.vx = direction * 350;
-    state.shuttle.vy = -510;
-    state.shuttle.lastHit = server.side;
-    state.shuttle.age = 0;
-    state.rally = 1;
+    const s = state.shuttle;
+    s.x = server.x + direction * 42;
+    s.h = 142;
+    s.vx = direction * 690;
+    s.vh = 650;
+    s.lastHit = server.side;
+    s.age = 0;
+    s.trail = [];
+    s.netHit = false;
     setStatus("RALLY");
-    showToast("PLAY", .52);
+    showToast("PLAY", .45);
     beep("hit");
   }
 
-  function isDown(...keys) {
-    return keys.some((key) => keySet.has(key));
-  }
-
-  function actionFor(player, action) {
+  function held(player, action) {
     if (player.side === 0) {
-      if (action === "left") return ["a"];
-      if (action === "right") return ["d"];
-      if (action === "jump") return ["w"];
-      if (action === "swing") return ["s", " "];
+      if (action === "left") return keys.has("KeyA") || keys.has("a");
+      if (action === "right") return keys.has("KeyD") || keys.has("d");
+      if (action === "jump") return keys.has("KeyW") || keys.has("w");
+      if (action === "swing") return keys.has("KeyS") || keys.has("s") || keys.has("Space") || keys.has(" ");
+    } else {
+      if (action === "left") return keys.has("ArrowLeft");
+      if (action === "right") return keys.has("ArrowRight");
+      if (action === "jump") return keys.has("ArrowUp");
+      if (action === "swing") return keys.has("ArrowDown");
     }
-    if (action === "left") return ["ArrowLeft"];
-    if (action === "right") return ["ArrowRight"];
-    if (action === "jump") return ["ArrowUp"];
-    if (action === "swing") return ["ArrowDown"];
-    return [];
-  }
-
-  function playerActionDown(player, action) {
-    return isDown(...actionFor(player, action));
+    return false;
   }
 
   function jump(player) {
-    if (player.onGround && player.swingCooldown <= 0) {
-      player.vy = -455;
-      player.onGround = false;
-      player.moveBlend = Math.max(player.moveBlend, .45);
-      beep("swing");
-    }
+    if (!player || !player.onGround || player.swingCooldown > 0 || state.screen !== "match") return;
+    player.vy = player.jumpSpeed;
+    player.onGround = false;
+    player.moveBlend = Math.max(player.moveBlend, .55);
+    beep("swing");
   }
 
-  function requestSwing(player) {
-    if (player.swingCooldown > 0 || state.screen !== "match" || state.serveTimer > 0 || state.pointPause > 0) return;
-    player.swing = .24;
-    player.swingCooldown = .25;
-    player.hasHitSwing = false;
+  function beginSwing(player) {
+    if (!player || state.screen !== "match" || state.serveTimer > 0 || state.pointPause > 0) return false;
+    if (player.swingTime > 0 || player.swingCooldown > 0) return false;
+    player.swingTime = player.swingDuration;
+    player.swingCooldown = .23;
+    player.swingContacted = false;
     beep("swing");
-    attemptHit(player);
+    return true;
   }
 
   function updateHuman(player, dt) {
-    const left = playerActionDown(player, "left");
-    const right = playerActionDown(player, "right");
-    const dir = (right ? 1 : 0) - (left ? 1 : 0);
-    player.vx = dir * player.speed;
-    if (dir) player.facing = dir;
+    const dir = (held(player, "right") ? 1 : 0) - (held(player, "left") ? 1 : 0);
+    const wanted = dir * player.maxSpeed;
+    if (dir) {
+      player.vx = approach(player.vx, wanted, player.acceleration * dt);
+      player.facing = dir;
+    } else {
+      player.vx = approach(player.vx, 0, player.friction * dt);
+    }
     player.x += player.vx * dt;
-    const limits = player.side === 0 ? [76, 438] : [522, 884];
-    player.x = clamp(player.x, limits[0], limits[1]);
-    player.moveBlend = lerp(player.moveBlend, Math.abs(dir), .23);
-    if (playerActionDown(player, "jump") && player.onGround) jump(player);
+    const bounds = player.side === 0 ? [70, NET_X - 34] : [NET_X + 34, WALL_R - 34];
+    player.x = clamp(player.x, bounds[0], bounds[1]);
+    player.moveBlend = lerp(player.moveBlend, Math.abs(player.vx) / player.maxSpeed, .18);
   }
 
-  function predictedXForAI(shuttle, player) {
-    if (!shuttle || shuttle.x < NET_X || shuttle.vx < 0) return player.homeX;
-    const target = clamp(shuttle.x + shuttle.vx * .35, 540, 884);
-    return target;
+  function racketPose(player, overrideProgress = null) {
+    const side = player.side === 0 ? 1 : -1;
+    const baseX = player.x + side * 10;
+    const baseY = FLOOR - player.y - 88;
+    const active = player.swingTime > 0;
+    const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
+    const eased = progress * progress * (3 - 2 * progress);
+    const rest = side === 1 ? -.82 : Math.PI + .82;
+    const start = side === 1 ? -1.58 : Math.PI + 1.58;
+    const end = side === 1 ? .72 : Math.PI - .72;
+    const angle = active ? lerp(start, end, eased) : rest;
+    const reach = active ? 71 + Math.sin(progress * Math.PI) * 5 : 63;
+    const handX = baseX + side * 7;
+    const handY = baseY + 4;
+    return {
+      side,
+      handX,
+      handY,
+      angle,
+      tipX: handX + Math.cos(angle) * reach,
+      tipY: handY + Math.sin(angle) * reach,
+      progress,
+      active
+    };
   }
 
-  function updateAI(player, dt) {
-    const shuttle = state.shuttle;
-    const ownSide = shuttle.x > NET_X - 8;
-    let target = ownSide ? predictedXForAI(shuttle, player) : player.homeX;
-    if (shuttle.x > NET_X && shuttle.vx < 0) target = clamp(shuttle.x - 34, 540, 884);
-    const reaction = .52 + state.aiSkill * .7;
-    const distance = target - player.x;
-    const dir = Math.abs(distance) > 10 ? Math.sign(distance) : 0;
-    player.vx = dir * player.speed * reaction;
-    if (dir) player.facing = dir;
-    player.x += player.vx * dt;
-    player.x = clamp(player.x, 522, 884);
-    player.moveBlend = lerp(player.moveBlend, Math.abs(dir), .18);
+  function distanceToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lengthSq = dx * dx + dy * dy || 1;
+    const t = clamp(((px - x1) * dx + (py - y1) * dy) / lengthSq, 0, 1);
+    const qx = x1 + t * dx;
+    const qy = y1 + t * dy;
+    return Math.hypot(px - qx, py - qy);
+  }
 
-    const reachable = Math.abs(shuttle.x - player.x) < 78 && shuttle.y < player.y - 37 && shuttle.y > player.y - 188;
-    if (ownSide && reachable && shuttle.vy > -180 && Math.random() < (state.aiSkill * 1.5 + dt * 3)) requestSwing(player);
-    if (ownSide && shuttle.y < player.y - 130 && Math.abs(shuttle.x - player.x) < 108 && player.onGround && state.aiSkill > .74 && Math.random() < dt * 6) jump(player);
-    if (ownSide && shuttle.y > player.y - 78 && Math.abs(shuttle.x - player.x) < 80 && player.onGround && Math.random() < dt * 2) jump(player);
+  function canReceive(player, shuttle) {
+    const onOwnSide = player.side === 0
+      ? shuttle.x < NET_X + 24
+      : shuttle.x > NET_X - 24;
+    const outgoingDirection = player.side === 0 ? 1 : -1;
+    const incoming = shuttle.vx * outgoingDirection < 150;
+    return onOwnSide && incoming && shuttle.lastHit !== player.side;
+  }
+
+  function hitBall(player) {
+    const s = state.shuttle;
+    if (!s || player.swingContacted || !canReceive(player, s)) return false;
+    const progress = 1 - player.swingTime / player.swingDuration;
+    if (progress < .14 || progress > .84) return false;
+
+    const pose = racketPose(player, progress);
+    const bx = s.x;
+    const by = FLOOR - s.h;
+    const previousBy = FLOOR - s.lastH;
+    const distance = Math.min(
+      Math.hypot(bx - pose.tipX, by - pose.tipY),
+      distanceToSegment(bx, by, pose.handX, pose.handY, pose.tipX, pose.tipY),
+      distanceToSegment(bx, by, pose.handX, pose.handY, pose.tipX, pose.tipY + 3)
+    );
+    const contactRadius = 48 + (player.side === 1 && !player.human ? 8 : 0);
+    if (distance > contactRadius || s.h < 38 || s.h > 405) return false;
+
+    const timing = 1 - clamp(Math.abs(progress - .52) / .46, 0, 1);
+    const sweet = 1 - clamp(distance / contactRadius, 0, 1);
+    const contactHeight = clamp((s.h - 78) / 250, 0, 1);
+    const airborne = clamp(player.y / 150, 0, 1);
+    const quality = clamp(.38 + timing * .34 + sweet * .24 + airborne * .08, .22, 1);
+    const direction = player.side === 0 ? 1 : -1;
+    const sideOffset = clamp((s.x - player.x) / 96, -1, 1);
+    const baseSpeed = 760 + quality * 300 + Math.abs(player.vx) * .16;
+    const aim = sideOffset * 100;
+    const smash = contactHeight > .56 && airborne > .16 && quality > .66;
+    const launchHeight = smash
+      ? 265 + quality * 90
+      : 520 + (1 - contactHeight) * 195 + (1 - quality) * 65;
+
+    s.lastX = s.x;
+    s.lastH = s.h;
+    s.vx = direction * baseSpeed + direction * aim;
+    s.vh = clamp(launchHeight, 240, 790);
+    s.lastHit = player.side;
+    s.age = 0;
+    s.netHit = false;
+    s.hitFlash = .18;
+    s.rotation += direction * (.45 + quality);
+    player.swingContacted = true;
+    player.hitCooldown = .18;
+    state.rally += 1;
+    state.flash = smash ? .13 : .07;
+    const label = smash ? "SMASH!" : quality > .72 ? "CLEAN HIT" : "HIT";
+    setStatus(smash ? "SMASH" : "RALLY");
+    showToast(label, .38);
+    hitBurst(s.x, by, smash ? "#fff0a9" : "#ffd8bf", smash ? 22 : 11, smash);
+    beep(smash ? "smash" : "hit");
+    return true;
   }
 
   function updatePlayerPhysics(player, dt) {
-    player.y += player.vy * dt;
-    player.vy += GRAVITY * dt;
-    if (player.y >= FLOOR) {
-      player.y = FLOOR;
-      player.vy = 0;
-      player.onGround = true;
-    } else {
-      player.onGround = false;
+    if (!player.onGround) {
+      player.y += player.vy * dt;
+      player.vy -= JUMP_GRAVITY * dt;
+      if (player.y <= 0) {
+        player.y = 0;
+        player.vy = 0;
+        player.onGround = true;
+      }
     }
-    player.swing = Math.max(0, player.swing - dt);
     player.swingCooldown = Math.max(0, player.swingCooldown - dt);
     player.hitCooldown = Math.max(0, player.hitCooldown - dt);
     player.scoreFlash = Math.max(0, player.scoreFlash - dt);
-    if (player.swing > 0 && !player.hasHitSwing) attemptHit(player);
+    if (player.swingTime > 0) {
+      player.swingTime = Math.max(0, player.swingTime - dt);
+      hitBall(player);
+    }
   }
 
-  function attemptHit(player) {
+  function predictIntercept(side, targetHeight = 116) {
     const s = state.shuttle;
-    if (!s || player.hitCooldown > .2 || state.serveTimer > 0 || state.pointPause > 0) return false;
-    const ownSide = player.side === 0 ? s.x < NET_X + 28 : s.x > NET_X - 28;
-    const directionToPlayer = player.side === 0 ? s.vx < 110 : s.vx > -110;
-    const idealY = player.y - 105;
-    const dx = Math.abs(s.x - player.x);
-    const dy = Math.abs(s.y - idealY);
-    const canReach = dx < 82 && dy < 87 && s.y < player.y - 29;
-    if (!ownSide || !canReach || !directionToPlayer || s.lastHit === player.side) return false;
+    if (!s) return null;
+    const outgoingDirection = side === 0 ? 1 : -1;
+    if (s.vx * outgoingDirection >= 110) return null;
+    let x = s.x;
+    let h = s.h;
+    let vx = s.vx;
+    let vh = s.vh;
+    let previousX = x;
+    for (let t = 0; t < 2.1; t += .025) {
+      previousX = x;
+      vx *= Math.exp(-SHUTTLE_DRAG * .025);
+      vh = (vh - GRAVITY * .025) * Math.exp(-SHUTTLE_VERTICAL_DRAG * .025);
+      x += vx * .025;
+      h += vh * .025;
+      if (x < WALL_L) { x = WALL_L; vx = Math.abs(vx) * .78; }
+      if (x > WALL_R) { x = WALL_R; vx = -Math.abs(vx) * .78; }
+      if ((previousX - NET_X) * (x - NET_X) < 0 && h < NET_HEIGHT + 6) return null;
+      if (h <= targetHeight && vh < 0 && (side === 0 ? x < NET_X - 12 : x > NET_X + 12)) {
+        return { x, h, t };
+      }
+      if (h < 0) return null;
+    }
+    return null;
+  }
 
-    const heightBoost = clamp((player.y - s.y) / 130, 0, 1);
-    const jumpBoost = player.onGround ? 0 : .2;
-    const timing = 1 - clamp((dx / 82 + dy / 87) * .5, 0, 1);
-    const quality = clamp(timing + jumpBoost * .35, .18, 1);
-    const direction = player.side === 0 ? 1 : -1;
-    const baseSpeed = 350 + quality * 190 + (player.choice === "robot" ? 22 : 0);
-    s.vx = direction * baseSpeed;
-    s.vy = -430 - quality * 180 - jumpBoost * 110;
-    s.lastHit = player.side;
-    s.age = 0;
-    player.hasHitSwing = true;
-    s.netHit = false;
-    state.rally += 1;
-    state.flash = .11;
-    player.hitCooldown = .22;
-    showToast(quality > .72 ? "SMASH!" : "HIT", .42);
-    burst(s.x, s.y, quality > .72 ? "#f7e7c0" : "#f2a7a2", 4);
-    beep("hit");
-    return true;
+  function updateAI(player, dt) {
+    const s = state.shuttle;
+    const bounds = [NET_X + 34, WALL_R - 34];
+    const incoming = canReceive(player, s);
+    const intercept = incoming ? predictIntercept(player.side, 116) : null;
+    let target = player.homeX || 755;
+    if (intercept) {
+      const error = (1 - state.aiSkill) * 36;
+      target = clamp(intercept.x + Math.sin(state.clock * 2.2 + player.aiSeed) * error, bounds[0], bounds[1]);
+    } else if (incoming && s.x > NET_X) {
+      target = clamp(s.x + s.vx * .12, bounds[0], bounds[1]);
+    }
+
+    const distance = target - player.x;
+    const desiredSpeed = clamp(distance * 5.4, -player.maxSpeed * (0.76 + state.aiSkill * .28), player.maxSpeed * (0.76 + state.aiSkill * .28));
+    player.vx = approach(player.vx, desiredSpeed, player.acceleration * (0.76 + state.aiSkill * .35) * dt);
+    player.x += player.vx * dt;
+    player.x = clamp(player.x, bounds[0], bounds[1]);
+    if (Math.abs(player.vx) > 15) player.facing = Math.sign(player.vx);
+    player.moveBlend = lerp(player.moveBlend, Math.abs(player.vx) / player.maxSpeed, .18);
+
+    if (intercept) {
+      const needJump = intercept.h > player.y + 112 && intercept.t < .73;
+      if (needJump && player.onGround && player.swingCooldown <= 0) jump(player);
+      const timeToContact = intercept.t;
+      if (timeToContact < .5 && Math.abs(intercept.x - player.x) < 116) beginSwing(player);
+    }
+
+    const currentDistance = Math.hypot(s.x - player.x, (FLOOR - s.h) - (FLOOR - player.y - 100));
+    if (incoming && currentDistance < 116 && s.h < 330 && s.h > 45 && s.vh < 180) beginSwing(player);
   }
 
   function updateShuttle(dt) {
     const s = state.shuttle;
     if (!s || state.serveTimer > 0 || state.pointPause > 0) return;
+
     s.age += dt;
-    s.trail.unshift({ x: s.x, y: s.y, life: 1 });
-    if (s.trail.length > 8) s.trail.pop();
-    s.trail.forEach((p) => p.life -= dt * 4.5);
-    s.vy += GRAVITY * dt;
-    const prevX = s.x;
+    s.lastX = s.x;
+    s.lastH = s.h;
+    s.trail.unshift({ x: s.x, y: FLOOR - s.h, life: 1, size: clamp(Math.hypot(s.vx, s.vh) / 440, 2, 6) });
+    if (s.trail.length > 16) s.trail.pop();
+    s.trail.forEach((p, index) => { p.life -= dt * (3.4 + index * .06); });
+    s.trail = s.trail.filter((p) => p.life > 0);
+    s.hitFlash = Math.max(0, s.hitFlash - dt);
+
+    const previousX = s.x;
+    const previousH = s.h;
+    s.vx *= Math.exp(-SHUTTLE_DRAG * dt);
+    s.vh = (s.vh - GRAVITY * dt) * Math.exp(-SHUTTLE_VERTICAL_DRAG * dt);
     s.x += s.vx * dt;
-    s.y += s.vy * dt;
+    s.h += s.vh * dt;
+    s.rotation += s.vx * dt * .004;
 
-    if (s.x < WALL_L) { s.x = WALL_L; s.vx = Math.abs(s.vx) * .88; s.netHit = false; }
-    if (s.x > WALL_R) { s.x = WALL_R; s.vx = -Math.abs(s.vx) * .88; s.netHit = false; }
-
-    if ((prevX - NET_X) * (s.x - NET_X) < 0 && s.y > NET_TOP + 5) {
-      s.x = NET_X + (s.x > prevX ? 4 : -4);
-      s.vx *= -.25;
-      s.vy *= .15;
-      s.netHit = true;
-      beep("hit");
+    if (s.x < WALL_L) {
+      s.x = WALL_L;
+      s.vx = Math.abs(s.vx) * .78;
+      wallBurst(s.x, FLOOR - s.h);
+    }
+    if (s.x > WALL_R) {
+      s.x = WALL_R;
+      s.vx = -Math.abs(s.vx) * .78;
+      wallBurst(s.x, FLOOR - s.h);
     }
 
-    if (s.y >= FLOOR - 2) {
-      scorePoint(s.x < NET_X ? 1 : 0);
+    if ((previousX - NET_X) * (s.x - NET_X) < 0) {
+      const t = (NET_X - previousX) / (s.x - previousX || 1);
+      const crossH = previousH + (s.h - previousH) * t;
+      if (crossH <= NET_HEIGHT + 8) {
+        s.x = NET_X + (s.x > previousX ? 5 : -5);
+        s.h = Math.max(18, crossH);
+        s.vx *= -.18;
+        s.vh *= .28;
+        s.netHit = true;
+        showToast("NET", .32);
+        hitBurst(NET_X, FLOOR - s.h, "#65b9cc", 8, false);
+        beep("hit");
+      }
     }
+
+    if (s.h <= 0) scorePoint(s.x < NET_X ? 1 : 0);
   }
 
   function burst(x, y, color, count = 18) {
     for (let i = 0; i < count; i++) {
       state.particles.push({
-        x, y, vx: rand(-150, 150), vy: rand(-340, -80), life: rand(.35, .9), size: rand(2, 5), color
+        x, y,
+        vx: rand(-180, 180),
+        vy: rand(-380, -90),
+        gravity: 520,
+        life: rand(.35, .9),
+        size: rand(2, 5),
+        color
       });
     }
   }
 
-  function updateParticles(dt) {
-    state.particles.forEach((p) => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 480 * dt; p.life -= dt; });
+  function hitBurst(x, y, color, count = 12, smash = false) {
+    state.hitFx.push({ x, y, life: smash ? .48 : .32, max: smash ? .48 : .32, smash });
+    burst(x, y, color, count);
+  }
+
+  function wallBurst(x, y) {
+    state.hitFx.push({ x, y, life: .2, max: .2, wall: true });
+  }
+
+  function updateEffects(dt) {
+    state.particles.forEach((p) => {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += p.gravity * dt;
+      p.life -= dt;
+    });
     state.particles = state.particles.filter((p) => p.life > 0);
+    state.hitFx.forEach((fx) => { fx.life -= dt; });
+    state.hitFx = state.hitFx.filter((fx) => fx.life > 0);
   }
 
   function update(dt) {
     state.clock += dt;
     state.toastTimer = Math.max(0, state.toastTimer - dt);
     state.flash = Math.max(0, state.flash - dt);
-    updateParticles(dt);
+    updateEffects(dt);
     if (state.screen !== "match") return;
-    if (state.pointPause > 0) { startRallyIfReady(dt); return; }
-    if (state.serveTimer > 0) { startRallyIfReady(dt); return; }
+    if (state.pointPause > 0 || state.serveTimer > 0) {
+      startRallyIfReady(dt);
+      return;
+    }
+
     for (const player of state.players) {
       if (player.human) updateHuman(player, dt);
       else updateAI(player, dt);
@@ -485,18 +657,21 @@
 
   function drawBackground() {
     const wall = ctx.createLinearGradient(0, 0, 0, 430);
-    wall.addColorStop(0, "#707a79");
-    wall.addColorStop(.52, "#687270");
+    wall.addColorStop(0, "#727c7b");
+    wall.addColorStop(.52, "#687371");
     wall.addColorStop(1, "#535c5b");
     ctx.fillStyle = wall;
     ctx.fillRect(0, 0, W, 425);
 
-    ctx.fillStyle = "rgba(18, 23, 23, .12)";
+    ctx.fillStyle = "rgba(18, 23, 23, .13)";
     ctx.fillRect(0, 0, 11, 425);
     ctx.fillRect(W - 11, 0, 11, 425);
     ctx.strokeStyle = "rgba(20, 26, 26, .27)";
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(45, 0); ctx.lineTo(45, 426); ctx.moveTo(915, 0); ctx.lineTo(915, 426); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(45, 0); ctx.lineTo(45, 426);
+    ctx.moveTo(915, 0); ctx.lineTo(915, 426);
+    ctx.stroke();
 
     grainDots.forEach((dot) => {
       ctx.fillStyle = "rgba(30, 40, 39, " + dot.a + ")";
@@ -593,9 +768,7 @@
     const text = String(state.score[0]) + "-" + String(state.score[1]);
     const totalW = text.split("").reduce((n, ch) => n + (ch === "-" ? 23 : 29), 0);
     let x = 480 - totalW / 2;
-    for (const ch of text) {
-      x += drawDigit(ch, x, 31, ch === "-" ? .9 : 1);
-    }
+    for (const ch of text) x += drawDigit(ch, x, 31, ch === "-" ? .9 : 1);
     ctx.restore();
   }
 
@@ -603,7 +776,10 @@
     ctx.save();
     ctx.strokeStyle = "#2789aa";
     ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(NET_X - 17, NET_TOP + 2); ctx.lineTo(NET_X - 17, FLOOR + 1); ctx.moveTo(NET_X + 17, NET_TOP + 2); ctx.lineTo(NET_X + 17, FLOOR + 1); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(NET_X - 17, NET_TOP + 2); ctx.lineTo(NET_X - 17, FLOOR + 1);
+    ctx.moveTo(NET_X + 17, NET_TOP + 2); ctx.lineTo(NET_X + 17, FLOOR + 1);
+    ctx.stroke();
     ctx.strokeStyle = "#40b4d0";
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(NET_X - 17, NET_TOP + 2); ctx.lineTo(NET_X + 17, NET_TOP + 2); ctx.lineTo(NET_X + 17, FLOOR); ctx.stroke();
@@ -619,9 +795,9 @@
   }
 
   function drawShadow(player) {
-    const height = FLOOR - player.y;
+    const height = player.y;
     ctx.save();
-    ctx.globalAlpha = .2 * (1 - clamp(height / 130, 0, .72));
+    ctx.globalAlpha = .2 * (1 - clamp(height / 160, 0, .72));
     ctx.fillStyle = "#1c2826";
     ctx.beginPath();
     ctx.ellipse(player.x, FLOOR + 2, 23 + height * .06, 5, 0, 0, TAU);
@@ -629,38 +805,58 @@
     ctx.restore();
   }
 
-  function drawRacket(player, swing) {
-    const side = player.side === 0 ? 1 : -1;
-    const baseX = player.x + side * 22;
-    const baseY = player.y - 86;
-    let angle = side === 1 ? -.88 : Math.PI + .88;
-    if (swing) angle += side === 1 ? .7 : -.7;
-    const handX = baseX + side * (swing ? 8 : 0);
-    const handY = baseY + (swing ? -8 : 2);
+  function drawRacket(player) {
+    const pose = racketPose(player);
+    const t = pose.active ? pose.progress : 0;
     ctx.save();
+    if (pose.active) {
+      const start = pose.side === 1 ? -1.58 : Math.PI + 1.58;
+      const end = pose.side === 1 ? .72 : Math.PI - .72;
+      ctx.globalAlpha = .22 * Math.sin(t * Math.PI);
+      ctx.strokeStyle = player.info.accent;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(pose.handX, pose.handY, 57, start, end, pose.side < 0);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     ctx.strokeStyle = "#b8c0bc";
     ctx.lineWidth = 4;
     ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + Math.cos(angle) * 43, handY + Math.sin(angle) * 43); ctx.stroke();
-    ctx.translate(handX + Math.cos(angle) * 60, handY + Math.sin(angle) * 60);
-    ctx.rotate(angle + Math.PI / 2);
-    ctx.strokeStyle = "#dfe3da";
+    ctx.beginPath();
+    ctx.moveTo(pose.handX, pose.handY);
+    ctx.lineTo(pose.tipX, pose.tipY);
+    ctx.stroke();
+
+    ctx.translate(pose.tipX, pose.tipY);
+    ctx.rotate(pose.angle + Math.PI / 2);
+    ctx.strokeStyle = "#e7e9df";
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(0, 0, 13, 28, 0, 0, TAU); ctx.stroke();
     ctx.strokeStyle = "rgba(207,218,211,.58)";
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(-8, -17); ctx.lineTo(8, 17); ctx.moveTo(8, -17); ctx.lineTo(-8, 17); ctx.moveTo(0, -20); ctx.lineTo(0, 20); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-8, -17); ctx.lineTo(8, 17);
+    ctx.moveTo(8, -17); ctx.lineTo(-8, 17);
+    ctx.moveTo(0, -20); ctx.lineTo(0, 20);
+    ctx.stroke();
     ctx.restore();
   }
 
   function drawPlayer(player) {
     const info = player.info;
-    const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.3 + player.moveBlend * 2) : 0;
-    const bodyY = player.y + bob;
-    const jumpHeight = FLOOR - player.y;
+    const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.2 + player.moveBlend * 1.8) : 0;
+    const floorY = FLOOR - player.y;
+    const bodyY = floorY + bob;
+    const lean = clamp(player.vx / 800, -1, 1) * 4;
+    const headX = player.x + lean;
+    const headY = bodyY - 121;
+    const shoulderY = bodyY - 90;
+    const hipY = bodyY - 50;
     const side = player.side === 0 ? 1 : -1;
     const walk = Math.sin(state.clock * 13 + player.side) * player.moveBlend;
-    const swing = player.swing > 0;
+    const swing = player.swingTime > 0;
+
     drawShadow(player);
     ctx.save();
     ctx.lineCap = "round";
@@ -668,11 +864,8 @@
     ctx.strokeStyle = info.body;
     ctx.fillStyle = info.body;
     ctx.lineWidth = 5;
-    const headX = player.x;
-    const headY = bodyY - 121;
-    const shoulderY = bodyY - 90;
-    const hipY = bodyY - 50;
     ctx.beginPath(); ctx.moveTo(headX, shoulderY); ctx.lineTo(headX, hipY); ctx.stroke();
+
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(headX, hipY); ctx.lineTo(headX - 13 + walk * 6, bodyY - 1);
@@ -683,8 +876,8 @@
     const armY = shoulderY + 3;
     ctx.lineWidth = 4;
     if (swing) {
-      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(headX + side * 33, shoulderY - 25); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 27, shoulderY + 24); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(headX + side * 34, shoulderY - 28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 28, shoulderY + 24); ctx.stroke();
     } else {
       ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(headX + side * 30, shoulderY - 22); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 26, shoulderY + 18); ctx.stroke();
@@ -727,12 +920,13 @@
       ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.moveTo(headX + side * 5, headY + 5); ctx.lineTo(headX + side * 10, headY + 7); ctx.stroke();
     }
-    drawRacket(player, swing);
-    if (!player.onGround && jumpHeight > 50) {
+
+    drawRacket(player);
+    if (!player.onGround && player.y > 55) {
       ctx.globalAlpha = .32;
       ctx.strokeStyle = info.accent;
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(player.x, player.y - 65, 29, Math.PI * .1, Math.PI * .9); ctx.stroke();
+      ctx.beginPath(); ctx.arc(player.x, floorY - 65, 29, Math.PI * .1, Math.PI * .9); ctx.stroke();
     }
     ctx.restore();
   }
@@ -740,33 +934,75 @@
   function drawShuttle() {
     const s = state.shuttle;
     if (!s) return;
+    ctx.save();
+    const shadowScale = clamp(1 - s.h / 420, .18, 1);
+    ctx.globalAlpha = .24 * shadowScale;
+    ctx.fillStyle = "#211b13";
+    ctx.beginPath();
+    ctx.ellipse(s.x, FLOOR + 3, 8 + shadowScale * 10, 2.5, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
     s.trail.forEach((p, i) => {
       if (p.life <= 0) return;
-      ctx.globalAlpha = p.life * .25;
-      ctx.fillStyle = "#f3c1bb";
-      ctx.beginPath(); ctx.arc(p.x, p.y, 3 - i * .18, 0, TAU); ctx.fill();
+      ctx.globalAlpha = p.life * .23;
+      ctx.fillStyle = i < 3 ? "#fff2dd" : "#f0af9e";
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(1.2, p.size * (1 - i / 19)), 0, TAU); ctx.fill();
     });
     ctx.globalAlpha = 1;
+
+    const y = FLOOR - s.h;
+    const speed = Math.hypot(s.vx, s.vh);
+    const scale = 1 + clamp(speed / 1700, 0, .26);
+    const angle = Math.atan2(-s.vh, s.vx || 1);
     ctx.save();
-    ctx.translate(s.x, s.y);
-    const angle = Math.atan2(s.vy, s.vx || 1);
+    ctx.translate(s.x, y);
     ctx.rotate(angle);
-    ctx.fillStyle = "#ef8584";
-    ctx.strokeStyle = "#fff1df";
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#ee8584";
+    ctx.strokeStyle = "#fff3de";
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-2, -4); ctx.lineTo(-19, -11); ctx.lineTo(-19, 11); ctx.closePath(); ctx.fillStyle = "#f5eee0"; ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = "#c9d1c9";
+    ctx.shadowColor = s.hitFlash > 0 ? "#fff1a9" : "transparent";
+    ctx.shadowBlur = s.hitFlash > 0 ? 15 : 0;
+    ctx.beginPath(); ctx.arc(0, 0, 6.3, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-2, -4.5); ctx.lineTo(-21, -12); ctx.lineTo(-20, 12); ctx.closePath();
+    ctx.fillStyle = "#f6efe0"; ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "#c7d0cb";
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(-7, -4); ctx.lineTo(-18, -7); ctx.moveTo(-7, 4); ctx.lineTo(-18, 7); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-7, -4); ctx.lineTo(-19, -8);
+    ctx.moveTo(-7, 4); ctx.lineTo(-19, 8);
+    ctx.moveTo(-8, 0); ctx.lineTo(-20, 0);
+    ctx.stroke();
     ctx.restore();
   }
 
-  function drawParticles() {
+  function drawEffects() {
     state.particles.forEach((p) => {
       ctx.globalAlpha = clamp(p.life * 1.7, 0, 1);
       ctx.fillStyle = p.color;
       ctx.fillRect(p.x, p.y, p.size, p.size);
+    });
+    state.hitFx.forEach((fx) => {
+      const t = 1 - fx.life / fx.max;
+      ctx.save();
+      ctx.globalAlpha = (1 - t) * .9;
+      ctx.strokeStyle = fx.wall ? "#8dd3df" : fx.smash ? "#ffe58d" : "#fff0c4";
+      ctx.lineWidth = fx.smash ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(fx.x, fx.y, 12 + t * (fx.smash ? 38 : 22), 0, TAU);
+      ctx.stroke();
+      if (fx.smash) {
+        for (let i = 0; i < 8; i++) {
+          const a = i / 8 * TAU + .2;
+          ctx.beginPath();
+          ctx.moveTo(fx.x + Math.cos(a) * 12, fx.y + Math.sin(a) * 12);
+          ctx.lineTo(fx.x + Math.cos(a) * (24 + t * 30), fx.y + Math.sin(a) * (24 + t * 30));
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     });
     ctx.globalAlpha = 1;
   }
@@ -794,7 +1030,7 @@
     drawPlayer(state.players[0] || createPlayer(0, "sam", true));
     drawPlayer(state.players[1] || createPlayer(1, "red", false));
     drawShuttle();
-    drawParticles();
+    drawEffects();
     drawToast();
     if (state.flash > 0) {
       ctx.fillStyle = "rgba(255,248,215," + (state.flash * .45) + ")";
@@ -822,51 +1058,59 @@
     setStatus("READY");
   }
 
-  function normalizeKey(key, code) {
-    if (code === "Space") return " ";
-    return key.length === 1 ? key.toLowerCase() : key;
+  function addKey(event) {
+    keys.add(event.code);
+    if (event.key && event.key.length === 1) keys.add(event.key.toLowerCase());
+  }
+
+  function removeKey(event) {
+    keys.delete(event.code);
+    if (event.key && event.key.length === 1) keys.delete(event.key.toLowerCase());
   }
 
   window.addEventListener("keydown", (event) => {
-    const key = normalizeKey(event.key, event.code);
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(key)) event.preventDefault();
-    if (key === "p" && !event.repeat) { togglePause(); return; }
-    if (key === "m" && !event.repeat) {
+    const code = event.code;
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(code)) event.preventDefault();
+    if (code === "KeyP" && !event.repeat) { togglePause(); return; }
+    if (code === "KeyM" && !event.repeat) {
       muted = !muted;
       $("connectionLight").innerHTML = "<i></i> " + (muted ? "MUTED" : "LOCAL PLAY");
       if (!muted) beep("swing");
       return;
     }
-    if (key === "Escape" && !event.repeat) {
+    if (code === "Escape" && !event.repeat) {
       if (state.screen === "match" || state.screen === "pause") exitToMenu();
       else menu();
       return;
     }
-    if (event.repeat) return;
-    keySet.add(key);
-    pressed.add(key);
-    if (state.screen === "match" && state.serveTimer <= 0 && state.pointPause <= 0) {
-      if (["w"].includes(key)) jump(state.players[0]);
-      if (["s", " "].includes(key)) {
-        requestSwing(state.players[0]);
-      }
-      if (state.mode === "local" && key === "ArrowUp") jump(state.players[1]);
-      if (state.mode === "local" && key === "ArrowDown") requestSwing(state.players[1]);
-    }
+    addKey(event);
+    if (event.repeat || state.screen !== "match" || state.serveTimer > 0 || state.pointPause > 0) return;
+    if (code === "KeyW") jump(state.players[0]);
+    if (code === "KeyS" || code === "Space") beginSwing(state.players[0]);
+    if (state.mode === "local" && code === "ArrowUp") jump(state.players[1]);
+    if (state.mode === "local" && code === "ArrowDown") beginSwing(state.players[1]);
   });
-  window.addEventListener("keyup", (event) => keySet.delete(normalizeKey(event.key, event.code)));
-  window.addEventListener("blur", () => keySet.clear());
+
+  window.addEventListener("keyup", removeKey);
+  window.addEventListener("blur", () => keys.clear());
+  canvas.addEventListener("pointerdown", () => canvas.focus());
 
   document.querySelectorAll(".touch-controls button").forEach((button) => {
-    const map = { left: "a", right: "d", jump: "w", swing: " " };
-    const key = map[button.dataset.key];
     const down = (event) => {
       event.preventDefault();
-      if (button.dataset.key === "jump") jump(state.players[0]);
-      if (button.dataset.key === "swing") requestSwing(state.players[0]);
-      keySet.add(key);
+      button.setPointerCapture?.(event.pointerId);
+      const action = button.dataset.key;
+      if (action === "jump") jump(state.players[0]);
+      if (action === "swing") beginSwing(state.players[0]);
+      if (action === "left") keys.add("KeyA");
+      if (action === "right") keys.add("KeyD");
     };
-    const up = (event) => { event.preventDefault(); keySet.delete(key); };
+    const up = (event) => {
+      event.preventDefault();
+      const action = button.dataset.key;
+      if (action === "left") keys.delete("KeyA");
+      if (action === "right") keys.delete("KeyD");
+    };
     button.addEventListener("pointerdown", down);
     ["pointerup", "pointercancel", "pointerleave"].forEach((name) => button.addEventListener(name, up));
   });
@@ -878,7 +1122,11 @@
   $("setupBack").addEventListener("click", menu);
   $("howStartBtn").addEventListener("click", () => openSetup("exhibition"));
   $("startMatchBtn").addEventListener("click", () => {
-    state.matchConfig = { mode: state.mode, player: $("playerSelect").value, opponent: $("opponentSelect").value };
+    state.matchConfig = {
+      mode: state.mode,
+      player: $("playerSelect").value,
+      opponent: $("opponentSelect").value
+    };
     startMatch();
   });
   $("resumeBtn").addEventListener("click", togglePause);
@@ -897,8 +1145,8 @@
   setStatus("READY");
 
   function loop(time) {
-    const dt = Math.min(.033, (time - lastTime) / 1000 || .016);
-    lastTime = time;
+    const dt = Math.min(.033, (time - state.lastTime) / 1000 || .016);
+    state.lastTime = time;
     update(dt);
     drawScene();
     rafId = requestAnimationFrame(loop);
