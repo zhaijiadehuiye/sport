@@ -50,8 +50,6 @@
     opponentIdle: [1, 2, 3, 4].map((n) => asset(`assets/processed/opponent-idle/idle-${n}.png`)),
     shuttle: [1, 2, 3, 4].map((n) => asset(`assets/processed/shuttle/projectile-${n}.png`))
   };
-  const tintedSwingCache = { coral: [], sky: [] };
-
   const drawableReady = (image) => Boolean(image && image.width > 0 && image.height > 0);
 
   const players = {
@@ -1104,44 +1102,12 @@
     ctx.restore();
   }
 
-  function tintSwingFrame(image, kit) {
-    if (!drawableReady(image) || kit === "mint") return image;
-    const buffer = document.createElement("canvas");
-    buffer.width = image.naturalWidth || image.width;
-    buffer.height = image.naturalHeight || image.height;
-    const bufferCtx = buffer.getContext("2d");
-    bufferCtx.drawImage(image, 0, 0);
-    const pixels = bufferCtx.getImageData(0, 0, buffer.width, buffer.height);
-    const target = kit === "coral" ? [218, 61, 73] : [56, 151, 205];
-    for (let i = 0; i < pixels.data.length; i += 4) {
-      const alpha = pixels.data[i + 3];
-      if (alpha < 24) continue;
-      const r = pixels.data[i];
-      const g = pixels.data[i + 1];
-      const b = pixels.data[i + 2];
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const chroma = max - min;
-      // The mint shirt is the only saturated green region in the frame. Keep
-      // skin, hair, shoes, strings and the white number untouched.
-      if (chroma < 18 || g < r * 1.04 || g < b * .92 || r > 205) continue;
-      const light = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-      const scale = clamp(light / .58, .58, 1.28);
-      pixels.data[i] = clamp(target[0] * scale, 0, 255);
-      pixels.data[i + 1] = clamp(target[1] * scale, 0, 255);
-      pixels.data[i + 2] = clamp(target[2] * scale, 0, 255);
-    }
-    bufferCtx.putImageData(pixels, 0, 0);
-    return buffer;
-  }
-
   function getSwingFrame(player, index) {
-    const source = art.playerSwing[index];
-    if (player.spriteKit === "mint" || !drawableReady(source)) return source;
-    if (!tintedSwingCache[player.spriteKit][index]) {
-      tintedSwingCache[player.spriteKit][index] = tintSwingFrame(source, player.spriteKit);
-    }
-    return tintedSwingCache[player.spriteKit][index];
+    // The swing frames contain the actual racket, arm extension and follow
+    // through. Keep them as source images so the same frame is used by both
+    // rendering and collision; recolouring a cross-origin PNG would taint the
+    // canvas and make the whole animation disappear.
+    return art.playerSwing[index];
   }
 
   function idleFramesFor(player) {
