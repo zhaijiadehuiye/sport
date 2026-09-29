@@ -84,6 +84,7 @@
     return {
       side,
       x: side === 0 ? 205 : 755,
+      homeX: side === 0 ? 205 : 755,
       y: 0,
       vy: 0,
       vx: 0,
@@ -567,14 +568,19 @@
   function updateAI(player, dt) {
     const s = state.shuttle;
     const bounds = [NET_X + 34, WALL_R - 34];
+    const hitDirection = player.side === 0 ? 1 : -1;
+    // The racket head sits in front of the player's body. Move the body
+    // behind the predicted contact point so the sweet spot, rather than the
+    // player's centre, meets the shuttle.
+    const racketLead = 64;
     const incoming = canReceive(player, s);
     const intercept = incoming ? predictIntercept(player.side, 116) : null;
     let target = player.homeX || 755;
     if (intercept) {
       const error = (1 - state.aiSkill) * 36;
-      target = clamp(intercept.x + Math.sin(state.clock * 2.2 + player.aiSeed) * error, bounds[0], bounds[1]);
+      target = clamp(intercept.x - hitDirection * racketLead + Math.sin(state.clock * 2.2 + player.aiSeed) * error, bounds[0], bounds[1]);
     } else if (incoming && s.x > NET_X) {
-      target = clamp(s.x + s.vx * .12, bounds[0], bounds[1]);
+      target = clamp(s.x - hitDirection * racketLead + s.vx * .12, bounds[0], bounds[1]);
     }
 
     const distance = target - player.x;
@@ -589,10 +595,10 @@
       const needJump = intercept.h > player.y + 112 && intercept.t < .73;
       if (needJump && player.onGround && player.swingCooldown <= 0) jump(player);
       const timeToContact = intercept.t;
-      if (timeToContact < .5 && Math.abs(intercept.x - player.x) < 116) beginSwing(player);
+      if (timeToContact < .64 && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 142) beginSwing(player);
     }
 
-    const currentDistance = Math.hypot(s.x - player.x, (FLOOR - s.h) - (FLOOR - player.y - 100));
+    const currentDistance = Math.hypot(s.x - (player.x + hitDirection * racketLead), (FLOOR - s.h) - (FLOOR - player.y - 100));
     if (incoming && currentDistance < 116 && s.h < 330 && s.h > 45 && s.vh < 180) beginSwing(player);
   }
 
