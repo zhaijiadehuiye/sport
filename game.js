@@ -1106,25 +1106,26 @@
 
   window.addEventListener("keydown", (event) => {
     const code = event.code;
+    const key = (event.key || "").toLowerCase();
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(code)) event.preventDefault();
-    if (code === "KeyP" && !event.repeat) { togglePause(); return; }
-    if (code === "KeyM" && !event.repeat) {
+    if ((code === "KeyP" || key === "p") && !event.repeat) { togglePause(); return; }
+    if ((code === "KeyM" || key === "m") && !event.repeat) {
       muted = !muted;
       $("connectionLight").innerHTML = "<i></i> " + (muted ? "MUTED" : "LOCAL PLAY");
       if (!muted) beep("swing");
       return;
     }
-    if (code === "Escape" && !event.repeat) {
+    if ((code === "Escape" || key === "escape") && !event.repeat) {
       if (state.screen === "match" || state.screen === "pause") exitToMenu();
       else menu();
       return;
     }
     addKey(event);
     if (event.repeat || state.screen !== "match" || state.serveTimer > 0 || state.pointPause > 0) return;
-    if (code === "KeyW") jump(state.players[0]);
-    if (code === "KeyS" || code === "Space") beginSwing(state.players[0]);
-    if (state.mode === "local" && code === "ArrowUp") jump(state.players[1]);
-    if (state.mode === "local" && code === "ArrowDown") beginSwing(state.players[1]);
+    if (code === "KeyW" || key === "w") jump(state.players[0]);
+    if (code === "KeyS" || code === "Space" || key === "s") beginSwing(state.players[0]);
+    if (state.mode === "local" && (code === "ArrowUp" || key === "arrowup")) jump(state.players[1]);
+    if (state.mode === "local" && (code === "ArrowDown" || key === "arrowdown")) beginSwing(state.players[1]);
   });
 
   window.addEventListener("keyup", removeKey);
