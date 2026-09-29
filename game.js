@@ -362,6 +362,11 @@
     const bounds = player.side === 0 ? [70, NET_X - 34] : [NET_X + 34, WALL_R - 34];
     player.x = clamp(player.x, bounds[0], bounds[1]);
     player.moveBlend = lerp(player.moveBlend, Math.abs(player.vx) / player.maxSpeed, .18);
+    // Holding the swing key keeps the racket ready through a rally. Each
+    // contact still has a cooldown, so it cannot become an automatic hit.
+    if (held(player, "swing") && player.swingTime <= 0 && player.swingCooldown <= 0) {
+      beginSwing(player);
+    }
   }
 
   function racketPose(player, overrideProgress = null) {
@@ -400,6 +405,31 @@
     return Math.hypot(px - qx, py - qy);
   }
 
+  function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+    const cross = (x1, y1, x2, y2) => x1 * y2 - y1 * x2;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const cdx = dx - cx;
+    const cdy = dy - cy;
+    const denom = cross(abx, aby, cdx, cdy);
+    if (Math.abs(denom) < 1e-6) return false;
+    const acx = cx - ax;
+    const acy = cy - ay;
+    const t = cross(acx, acy, cdx, cdy) / denom;
+    const u = cross(acx, acy, abx, aby) / denom;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  }
+
+  function distanceBetweenSegments(ax, ay, bx, by, cx, cy, dx, dy) {
+    if (segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0;
+    return Math.min(
+      distanceToSegment(ax, ay, cx, cy, dx, dy),
+      distanceToSegment(bx, by, cx, cy, dx, dy),
+      distanceToSegment(cx, cy, ax, ay, bx, by),
+      distanceToSegment(dx, dy, ax, ay, bx, by)
+    );
+  }
+
   function canReceive(player, shuttle) {
     const onOwnSide = player.side === 0
       ? shuttle.x < NET_X + 24
@@ -418,28 +448,34 @@
     const pose = racketPose(player, progress);
     const bx = s.x;
     const by = FLOOR - s.h;
+    const previousBx = s.lastX;
     const previousBy = FLOOR - s.lastH;
-    const distance = Math.min(
-      Math.hypot(bx - pose.tipX, by - pose.tipY),
-      distanceToSegment(bx, by, pose.handX, pose.handY, pose.tipX, pose.tipY),
-      distanceToSegment(bx, by, pose.handX, pose.handY, pose.tipX, pose.tipY + 3)
+    const racketDistance = distanceBetweenSegments(
+      previousBx, previousBy, bx, by,
+      pose.handX, pose.handY, pose.tipX, pose.tipY
     );
-    const contactRadius = 48 + (player.side === 1 && !player.human ? 8 : 0);
-    if (distance > contactRadius || s.h < 38 || s.h > 405) return false;
+    const tipDistance = Math.min(
+      Math.hypot(bx - pose.tipX, by - pose.tipY),
+      Math.hypot(previousBx - pose.tipX, previousBy - pose.tipY)
+    );
+    const distance = Math.min(racketDistance, tipDistance);
+    const contactRadius = player.human ? 62 : 56 + (player.side === 1 ? 8 : 0);
+    const contactHeight = Math.max(s.h, s.lastH);
+    if (distance > contactRadius || contactHeight < 26 || contactHeight > 430) return false;
 
     const timing = 1 - clamp(Math.abs(progress - .52) / .46, 0, 1);
     const sweet = 1 - clamp(distance / contactRadius, 0, 1);
-    const contactHeight = clamp((s.h - 78) / 250, 0, 1);
+    const contactHeightRatio = clamp((s.h - 78) / 250, 0, 1);
     const airborne = clamp(player.y / 150, 0, 1);
     const quality = clamp(.38 + timing * .34 + sweet * .24 + airborne * .08, .22, 1);
     const direction = player.side === 0 ? 1 : -1;
     const sideOffset = clamp((s.x - player.x) / 96, -1, 1);
     const baseSpeed = 760 + quality * 300 + Math.abs(player.vx) * .16;
     const aim = sideOffset * 100;
-    const smash = contactHeight > .56 && airborne > .16 && quality > .66;
+    const smash = contactHeightRatio > .56 && airborne > .16 && quality > .66;
     const launchHeight = smash
       ? 265 + quality * 90
-      : 520 + (1 - contactHeight) * 195 + (1 - quality) * 65;
+      : 520 + (1 - contactHeightRatio) * 195 + (1 - quality) * 65;
 
     s.lastX = s.x;
     s.lastH = s.h;
