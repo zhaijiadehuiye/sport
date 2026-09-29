@@ -677,7 +677,10 @@
     // player's centre, meets the shuttle.
     const racketLead = 64;
     const incoming = canReceive(player, s);
-    const intercept = incoming ? predictIntercept(player.side, 116) : null;
+    // The red player's real racket head sits around 170–180 world units when
+    // grounded. Predict that height instead of waiting for the shuttle to
+    // drop to the ankles, which made the old AI swing too early and miss.
+    const intercept = incoming ? predictIntercept(player.side, 176) : null;
     let target = player.homeX || 755;
     if (intercept) {
       const error = (1 - state.aiSkill) * 36;
@@ -695,14 +698,14 @@
     player.moveBlend = lerp(player.moveBlend, Math.abs(player.vx) / player.maxSpeed, .18);
 
     if (intercept) {
-      const needJump = intercept.h > player.y + 112 && intercept.t < .73;
+      const needJump = intercept.h > player.y + 214 && intercept.t < .8;
       if (needJump && player.onGround && player.swingCooldown <= 0) jump(player);
       const timeToContact = intercept.t;
-      if (timeToContact < .64 && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 142) beginSwing(player);
+      if (timeToContact < .27 && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 118) beginSwing(player);
     }
 
     const currentDistance = Math.hypot(s.x - (player.x + hitDirection * racketLead), (FLOOR - s.h) - (FLOOR - player.y - 100));
-    if (incoming && currentDistance < 116 && s.h < 330 && s.h > 45 && s.vh < 180) beginSwing(player);
+    if (incoming && currentDistance < 130 && s.h < 250 && s.h > 90 && s.vh < 250) beginSwing(player);
   }
 
   function updateShuttle(dt) {
