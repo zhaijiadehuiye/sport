@@ -484,9 +484,9 @@
     const direction = player.side === 0 ? 1 : -1;
     const sideOffset = clamp((s.x - player.x) / 96, -1, 1);
     const aim = sideOffset * 105;
-    // A smash is a fast, shallow shot. It should travel through the net's
-    // upper gap and begin dropping soon after, rather than becoming another
-    // high lob with a different label.
+    // A smash is a fast, shallow shot. Aim its apex at the top of the net so
+    // the shuttle crosses with clearance, then falls into the receiver's
+    // forecourt instead of turning into another high lob.
     const smash = contactHeightRatio > .72 && airborne > .10 && quality > .66;
     const baseSpeed = smash
       ? 1080 + quality * 300 + Math.abs(player.vx) * .12
@@ -494,11 +494,13 @@
     const launchHeight = smash
       ? 24 + quality * 72
       : 520 + (1 - contactHeightRatio) * 195 + (1 - quality) * 65;
+    const timeToNet = Math.max(.13, Math.abs(NET_X - player.x) / baseSpeed);
+    const smashVertical = (NET_HEIGHT + 54 - s.h + .5 * GRAVITY * timeToNet * timeToNet) / timeToNet;
 
     s.lastX = s.x;
     s.lastH = s.h;
     s.vx = direction * baseSpeed + direction * aim;
-    s.vh = smash ? clamp(launchHeight, 18, 180) : clamp(launchHeight, 240, 790);
+    s.vh = smash ? clamp(smashVertical, -520, 160) : clamp(launchHeight, 240, 790);
     s.lastHit = player.side;
     s.age = 0;
     s.netHit = false;
