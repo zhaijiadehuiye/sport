@@ -112,12 +112,13 @@
   }
 
   function createShuttle() {
+    const serveX = state.serveSide === 0 ? 250 : 710;
     return {
-      x: state.serveSide === 0 ? 250 : 710,
+      x: serveX,
       h: 128,
       vx: 0,
       vh: 0,
-      lastX: 250,
+      lastX: serveX,
       lastH: 128,
       lastHit: -1,
       age: 0,
