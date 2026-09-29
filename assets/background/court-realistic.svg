@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#87918f"/>
+      <stop offset=".56" stop-color="#6f7a78"/>
+      <stop offset="1" stop-color="#4e5a59"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9a45e"/>
+      <stop offset=".36" stop-color="#c98d48"/>
+      <stop offset="1" stop-color="#9b602f"/>
+    </linearGradient>
+    <linearGradient id="window" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dce7d4"/>
+      <stop offset="1" stop-color="#8da69d"/>
+    </linearGradient>
+    <linearGradient id="sunbeam" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff9d4" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#fff9d4" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="wallTexture" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="3" seed="7"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="table" tableValues="0 .1"/></feComponentTransfer>
+    </filter>
+    <filter id="woodTexture" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency=".012 .16" numOctaves="2" seed="14"/>
+      <feColorMatrix type="matrix" values=".45 0 0 0 .26 .25 0 0 0 .12 .12 0 0 0 .06 0 0 0 .22 0"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <pattern id="boards" width="170" height="18" patternUnits="userSpaceOnUse">
+      <rect width="170" height="18" fill="none"/>
+      <path d="M0 3h170M0 12h170" stroke="#7c4c29" stroke-opacity=".12" stroke-width="1"/>
+      <path d="M14 0v18M106 0v18" stroke="#f5c47c" stroke-opacity=".1" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#wall)"/>
+  <rect width="1600" height="560" fill="#243032" opacity=".16" filter="url(#wallTexture)"/>
+
+  <g opacity=".92">
+    <rect x="0" y="0" width="1600" height="28" fill="#202b2d"/>
+    <path d="M0 28H1600" stroke="#d4dbcb" stroke-opacity=".16" stroke-width="3"/>
+    <g fill="#dfe9d5" stroke="#384548" stroke-width="12">
+      <rect x="34" y="54" width="284" height="146" rx="3"/>
+      <rect x="360" y="54" width="284" height="146" rx="3"/>
+      <rect x="686" y="54" width="284" height="146" rx="3"/>
+      <rect x="1012" y="54" width="284" height="146" rx="3"/>
+      <rect x="1338" y="54" width="228" height="146" rx="3"/>
+    </g>
+    <g fill="url(#window)">
+      <rect x="45" y="65" width="262" height="124"/>
+      <rect x="371" y="65" width="262" height="124"/>
+      <rect x="697" y="65" width="262" height="124"/>
+      <rect x="1023" y="65" width="262" height="124"/>
+      <rect x="1349" y="65" width="206" height="124"/>
+    </g>
+    <g fill="#5c756d" opacity=".54">
+      <path d="M45 172l50-42 35 31 30-54 47 48 33-30 67 52H45z"/>
+      <path d="M371 176l55-53 27 34 37-58 33 45 31-22 79 60H371z"/>
+      <path d="M697 174l45-36 36 26 35-62 44 54 40-29 62 47H697z"/>
+      <path d="M1023 174l54-47 38 35 30-48 41 54 30-32 69 38H1023z"/>
+      <path d="M1349 176l42-34 30 28 30-49 42 52 34-26 28 29H1349z"/>
+    </g>
+    <g stroke="#3b4849" stroke-width="8">
+      <path d="M170 54v146M496 54v146M822 54v146M1148 54v146M1452 54v146"/>
+      <path d="M34 127h1532"/>
+    </g>
+  </g>
+
+  <g fill="#d6d9cc" opacity=".6">
+    <rect x="0" y="222" width="1600" height="12"/>
+    <rect x="0" y="516" width="1600" height="34" opacity=".28"/>
+  </g>
+  <g fill="#253335" opacity=".34">
+    <rect x="0" y="234" width="1600" height="282"/>
+  </g>
+  <g fill="#374648" opacity=".45">
+    <rect x="0" y="234" width="12" height="282"/>
+    <rect x="300" y="234" width="12" height="282"/>
+    <rect x="628" y="234" width="12" height="282"/>
+    <rect x="956" y="234" width="12" height="282"/>
+    <rect x="1284" y="234" width="12" height="282"/>
+    <rect x="1588" y="234" width="12" height="282"/>
+  </g>
+  <path d="M0 235H1600V516H0Z" fill="#273537" opacity=".12" filter="url(#wallTexture)"/>
+
+  <g opacity=".9">
+    <path d="M18 214L430 516H80Z" fill="url(#sunbeam)"/>
+    <path d="M1580 214L1170 516H1520Z" fill="url(#sunbeam)"/>
+  </g>
+
+  <rect y="516" width="1600" height="384" fill="url(#floor)"/>
+  <rect y="516" width="1600" height="384" fill="url(#boards)" opacity=".7"/>
+  <rect y="516" width="1600" height="384" filter="url(#woodTexture)" opacity=".62"/>
+  <path d="M0 516H1600" stroke="#f9d48d" stroke-opacity=".55" stroke-width="4"/>
+  <g stroke="#794820" stroke-opacity=".18" stroke-width="2">
+    <path d="M0 582H1600M0 653H1600M0 728H1600M0 808H1600"/>
+  </g>
+  <g fill="#fff3bf" opacity=".1" filter="url(#softShadow)">
+    <ellipse cx="250" cy="650" rx="180" ry="25"/>
+    <ellipse cx="800" cy="655" rx="250" ry="28"/>
+    <ellipse cx="1350" cy="650" rx="180" ry="25"/>
+  </g>
+
+  <g stroke="#f7e2af" stroke-width="7" fill="none" opacity=".82">
+    <path d="M102 900V704L328 604"/>
+    <path d="M1498 900V704L1272 604"/>
+    <path d="M328 604H1272"/>
+  </g>
+</svg>
