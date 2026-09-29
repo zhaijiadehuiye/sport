@@ -47,6 +47,7 @@
     playerCoral: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-coral/idle-${n}.png`)),
     playerSky: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-sky/idle-${n}.png`)),
     playerSwing: [1, 2, 3, 4].map((n) => asset(`assets/processed/player-swing/attack-${n}.png`)),
+    opponentSwing: [1, 2, 3, 4].map((n) => asset(`assets/processed/opponent-swing/attack-${n}.svg`)),
     opponentIdle: [1, 2, 3, 4].map((n) => asset(`assets/processed/opponent-idle/idle-${n}.png`)),
     shuttle: [1, 2, 3, 4].map((n) => asset(`assets/processed/shuttle/projectile-${n}.png`))
   };
@@ -403,18 +404,28 @@
     }
   }
 
-  const swingRacketFrames = [
+  const playerSwingRacketFrames = [
     { hand: [98, 129], head: [158, 78] },
     { hand: [143, 121], head: [221, 87] },
     { hand: [144, 112], head: [183, 64] },
     { hand: [145, 92], head: [183, 66] }
+  ];
+  // These points are measured from the generated red-player attack frames.
+  // The collision segment is the same hand-to-racket line shown on screen.
+  const opponentSwingRacketFrames = [
+    { hand: [78, 104], head: [79, 55] },
+    { hand: [130, 84], head: [111, 43] },
+    { hand: [89, 62], head: [29, 56] },
+    { hand: [139, 58], head: [168, 43] }
   ];
   const idleRacketRight = { hand: [138, 144], head: [175, 120] };
   const idleRacketLeft = { hand: [116, 141], head: [80, 108] };
 
   function spriteShouldBeFlipped(player, active) {
     if (player.side === 0) return false;
-    return active || !player.useOpponentIdle;
+    // The red opponent's idle and attack assets both already face left.
+    // Other kits reuse the right-facing player art and are mirrored here.
+    return !player.useOpponentIdle;
   }
 
   function spriteRacketPose(player, overrideProgress = null) {
@@ -422,14 +433,15 @@
     const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
     let frame;
     if (active) {
-      const frameT = clamp(progress, 0, 1) * (swingRacketFrames.length - 1);
+      const swingFrames = player.useOpponentIdle ? opponentSwingRacketFrames : playerSwingRacketFrames;
+      const frameT = clamp(progress, 0, 1) * (swingFrames.length - 1);
       const from = Math.floor(frameT);
-      const to = Math.min(swingRacketFrames.length - 1, from + 1);
+      const to = Math.min(swingFrames.length - 1, from + 1);
       const mix = frameT - from;
       const blend = (a, b) => [lerp(a[0], b[0], mix), lerp(a[1], b[1], mix)];
       frame = {
-        hand: blend(swingRacketFrames[from].hand, swingRacketFrames[to].hand),
-        head: blend(swingRacketFrames[from].head, swingRacketFrames[to].head)
+        hand: blend(swingFrames[from].hand, swingFrames[to].hand),
+        head: blend(swingFrames[from].head, swingFrames[to].head)
       };
     } else {
       frame = player.useOpponentIdle ? idleRacketLeft : idleRacketRight;
@@ -490,7 +502,8 @@
 
   function useSpriteArt(player) {
     const idle = player.useOpponentIdle ? art.opponentIdle[0] : art.playerIdle[0];
-    return drawableReady(idle) && drawableReady(art.playerSwing[0]);
+    const swing = player.useOpponentIdle ? art.opponentSwing[0] : art.playerSwing[0];
+    return drawableReady(idle) && drawableReady(swing);
   }
 
   function racketPose(player, overrideProgress = null) {
@@ -1105,9 +1118,9 @@
   function getSwingFrame(player, index) {
     // The swing frames contain the actual racket, arm extension and follow
     // through. Keep them as source images so the same frame is used by both
-    // rendering and collision; recolouring a cross-origin PNG would taint the
-    // canvas and make the whole animation disappear.
-    return art.playerSwing[index];
+    // rendering and collision; recolouring a cross-origin image would taint
+    // the canvas and make the whole animation disappear.
+    return (player.useOpponentIdle ? art.opponentSwing : art.playerSwing)[index];
   }
 
   function idleFramesFor(player) {
