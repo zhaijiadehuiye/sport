@@ -1473,7 +1473,7 @@
     const y = FLOOR - s.h;
     const speed = Math.hypot(s.vx, s.vh);
     const angle = inFlight ? (s.angle ?? Math.atan2(-s.vh, s.vx || 1)) : s.serveAngle;
-    const scale = inFlight ? clamp(.9 + speed / 1100, .95, 1.38) : .88;
+    const scale = inFlight ? clamp(.58 + speed / 2400, .62, .82) : .58;
 
     if (inFlight) {
       ctx.save();
@@ -1490,7 +1490,7 @@
     // the cork position backward, so a fast clear reads as motion instead of
     // a decorative line glued to the shuttle.
     if (inFlight && s.trail.length) {
-      const trailLength = clamp(speed * .020, 10, 30);
+      const trailLength = clamp(speed * .010, 5, 16);
       s.trail.forEach((p, i) => {
         if (p.life <= 0) return;
         const fade = p.life * (.32 - Math.min(i, 12) * .018);
@@ -1500,7 +1500,7 @@
         ctx.rotate(p.angle ?? angle);
         ctx.globalAlpha = Math.max(.025, fade);
         ctx.strokeStyle = i < 3 ? "#fff7df" : "#e8a49a";
-        ctx.lineWidth = Math.max(1, 4 - i * .18);
+        ctx.lineWidth = Math.max(.7, 2.2 - i * .12);
         ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(-length * (p.speed ? clamp(p.speed / Math.max(speed, 1), .72, 1.2) : 1), 0);
@@ -1520,7 +1520,7 @@
       ctx.globalAlpha = clamp(s.hitFlash * 5, 0, 1);
       ctx.strokeStyle = "#fff0af";
       ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(0, 0, 12 + (1 - s.hitFlash / .18) * 10, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, 7 + (1 - s.hitFlash / .18) * 6, 0, TAU); ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
@@ -1530,50 +1530,50 @@
     const fanTilt = inFlight ? Math.sin(s.rotation * .9) * .11 : 0;
     ctx.save();
     ctx.rotate(fanTilt);
-    const featherGradient = ctx.createLinearGradient(-36, 0, 4, 0);
+    const featherGradient = ctx.createLinearGradient(-18, 0, 3, 0);
     featherGradient.addColorStop(0, "#f7f6e9");
     featherGradient.addColorStop(.6, "#fffdf2");
     featherGradient.addColorStop(1, "#d9d8c4");
     ctx.fillStyle = featherGradient;
     ctx.strokeStyle = "rgba(173,176,158,.95)";
-    ctx.lineWidth = 1.15;
+    ctx.lineWidth = .9;
     ctx.beginPath();
-    ctx.moveTo(4, -3.5);
-    ctx.bezierCurveTo(-8, -7, -22, -17, -35, -15);
-    ctx.quadraticCurveTo(-29, -4, -33, 0);
-    ctx.quadraticCurveTo(-29, 7, -35, 15);
-    ctx.bezierCurveTo(-22, 17, -8, 7, 4, 3.5);
+    ctx.moveTo(3, -2.2);
+    ctx.bezierCurveTo(-4, -4, -11, -9, -18, -8);
+    ctx.quadraticCurveTo(-15, -2.5, -17, 0);
+    ctx.quadraticCurveTo(-15, 2.5, -18, 8);
+    ctx.bezierCurveTo(-11, 9, -4, 4, 3, 2.2);
     ctx.closePath();
     ctx.fill(); ctx.stroke();
 
     // Individual vanes keep the shuttle legible when it is small on screen.
     ctx.strokeStyle = "rgba(176,178,160,.92)";
     ctx.lineWidth = 1;
-    for (let i = -4; i <= 4; i++) {
-      const spread = i * 2.55;
+    for (let i = -3; i <= 3; i++) {
+      const spread = i * 1.9;
       ctx.beginPath();
       ctx.moveTo(2, spread * .38);
-      ctx.quadraticCurveTo(-15, spread * 1.03, -31, spread * 1.16);
+      ctx.quadraticCurveTo(-8, spread * 1.03, -16, spread * 1.16);
       ctx.stroke();
     }
     ctx.strokeStyle = "rgba(255,255,255,.78)";
     ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(1, -1); ctx.lineTo(-28, -10); ctx.moveTo(1, 1); ctx.lineTo(-28, 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(1, -.7); ctx.lineTo(-15, -5); ctx.moveTo(1, .7); ctx.lineTo(-15, 5); ctx.stroke();
     ctx.restore();
 
     // Cork: warm leather colour, pale highlight, and one dark seam. The
     // physics point is its centre, so the racket never hits the feathers.
-    const corkGradient = ctx.createRadialGradient(-2, -3, 1, 1, 1, 8);
+    const corkGradient = ctx.createRadialGradient(-1, -1.5, .5, 1, 1, 5);
     corkGradient.addColorStop(0, "#fff5d3");
     corkGradient.addColorStop(.55, "#e8c995");
     corkGradient.addColorStop(1, "#9d694b");
     ctx.fillStyle = corkGradient;
     ctx.strokeStyle = "#704a3b";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = .9;
+    ctx.beginPath(); ctx.arc(0, 0, 4.2, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.strokeStyle = "rgba(255,247,218,.8)";
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(-2, -2, 2.1, 0, TAU); ctx.stroke();
+    ctx.lineWidth = .7;
+    ctx.beginPath(); ctx.arc(-1, -1, 1.3, 0, TAU); ctx.stroke();
     ctx.restore();
   }
 
