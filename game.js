@@ -434,6 +434,19 @@
   }
 
   function serveHandWorld(player) {
+    if (!useSpriteArt(player)) {
+      // The hand-drawn figure has a different proportion from the old image
+      // sheets. Keep the shuttle on the actual free hand instead of reusing
+      // the sprite-sheet measurement, which would place it near the face.
+      const side = player.side === 0 ? 1 : -1;
+      const lean = clamp(player.vx / 800, -1, 1) * 4;
+      const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.1 + player.moveBlend * 1.7) : 0;
+      const bodyY = FLOOR - player.y + bob;
+      return {
+        x: player.x + lean - side * 47,
+        y: bodyY - 64
+      };
+    }
     // The non-racket hand is the launch point. The opponent idle art already
     // faces left, so its free hand uses the right side of the source frame.
     const hand = player.useOpponentIdle ? [164, 134] : [101, 134];
