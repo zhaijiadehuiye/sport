@@ -649,9 +649,10 @@
   }
 
   function useSpriteArt(player) {
-    const idle = player.useOpponentIdle ? art.opponentIdle[0] : art.playerIdle[0];
-    const swing = player.useOpponentIdle ? art.opponentSwing[0] : art.playerSwing[0];
-    return drawableReady(idle) && drawableReady(swing);
+    // The generated character sheets looked detailed, but their timing did
+    // not read as a single playable action. Keep the readable hand-drawn
+    // figures for every kit; the racket pose and collision share one source.
+    return false;
   }
 
   function racketPose(player, overrideProgress = null) {
@@ -1183,86 +1184,129 @@
 
   function drawStickPlayer(player) {
     const info = player.info;
-    const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.2 + player.moveBlend * 1.8) : 0;
-    const floorY = FLOOR - player.y;
-    const bodyY = floorY + bob;
-    const lean = clamp(player.vx / 800, -1, 1) * 4;
-    const headX = player.x + lean;
-    const headY = bodyY - 121;
-    const shoulderY = bodyY - 90;
-    const hipY = bodyY - 50;
     const side = player.side === 0 ? 1 : -1;
-    const walk = Math.sin(state.clock * 13 + player.side) * player.moveBlend;
-    const swing = player.swingTime > 0;
+    const floorY = FLOOR - player.y;
+    const active = player.swingTime > 0;
+    const progress = active ? clamp(1 - player.swingTime / player.swingDuration, 0, 1) : 0;
+    const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.1 + player.moveBlend * 1.7) : 0;
+    const lean = clamp(player.vx / 800, -1, 1) * 4;
+    const actionShift = active ? side * Math.sin(progress * Math.PI) * 7 : 0;
+    const headX = player.x + lean + actionShift;
+    const bodyY = floorY + bob;
+    const headY = bodyY - 151;
+    const shoulderY = bodyY - 113;
+    const hipY = bodyY - 55;
+    const kit = player.choice === "red" ? "#e95a58" : player.choice === "robot" ? "#49b6c9" : "#42a99b";
+    const kitLight = player.choice === "red" ? "#ff8b72" : player.choice === "robot" ? "#8ce4e5" : "#9de1c0";
+    const skin = player.choice === "robot" ? "#9bdce3" : "#d9956b";
+    const pants = "#20353c";
     const pose = racketPose(player);
 
     drawShadow(player);
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = info.body;
-    ctx.fillStyle = info.body;
-    ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(headX, shoulderY); ctx.lineTo(headX, hipY); ctx.stroke();
-
-    ctx.lineWidth = 4;
+    // Legs are deliberately chunky so footwork remains readable at game
+    // speed. The small walk phase gives idle movement without wobbling the
+    // collision points.
+    const walk = Math.sin(state.clock * 11 + player.side) * player.moveBlend;
+    ctx.strokeStyle = pants;
+    ctx.lineWidth = 11;
     ctx.beginPath();
-    ctx.moveTo(headX, hipY); ctx.lineTo(headX - 13 + walk * 6, bodyY - 1);
-    ctx.moveTo(headX, hipY); ctx.lineTo(headX + 13 - walk * 6, bodyY - 1);
+    ctx.moveTo(headX - 11, hipY); ctx.lineTo(headX - 18 + walk * 5, bodyY + 2);
+    ctx.moveTo(headX + 11, hipY); ctx.lineTo(headX + 18 - walk * 5, bodyY + 2);
     ctx.stroke();
 
-    const armX = headX + side * 4;
-    const armY = shoulderY + 3;
-    ctx.lineWidth = 4;
-    if (swing) {
-      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 28, shoulderY + 24); ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.moveTo(armX, armY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(headX - side * 3, armY + 1); ctx.lineTo(headX - side * 26, shoulderY + 18); ctx.stroke();
-    }
-
-    ctx.fillStyle = info.head;
+    // Shoes have a soft highlight so the feet remain visible against the
+    // court. They also sell the quick side-to-side movement better than a
+    // pair of one-pixel stick ends.
+    ctx.fillStyle = player.choice === "red" ? "#ff8b72" : player.choice === "robot" ? "#d1f1ef" : "#f08a73";
     ctx.strokeStyle = info.body;
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(headX, headY, 17, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(headX - 20 + walk * 5, bodyY + 3, 22, 8, -.08, 0, TAU);
+    ctx.ellipse(headX + 20 - walk * 5, bodyY + 3, 22, 8, .08, 0, TAU);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,.48)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(headX - 32 + walk * 5, bodyY + 1); ctx.lineTo(headX - 17 + walk * 5, bodyY + 1);
+    ctx.moveTo(headX + 8 - walk * 5, bodyY + 1); ctx.lineTo(headX + 24 - walk * 5, bodyY + 1);
+    ctx.stroke();
 
-    if (info.kind === "sam") {
-      ctx.fillStyle = "#0c0f10";
-      ctx.fillRect(headX - 19, headY - 26, 38, 6);
-      ctx.fillRect(headX - 13, headY - 44, 26, 18);
-      ctx.fillRect(headX - 17, headY - 46, 34, 4);
-      ctx.fillStyle = "#111416";
-      ctx.beginPath(); ctx.arc(headX + side * 6, headY - 1, 2.2, 0, TAU); ctx.fill();
-    } else if (info.kind === "red") {
-      ctx.fillStyle = "#d42d3a";
-      ctx.beginPath(); ctx.arc(headX - 9, headY - 9, 12, Math.PI * .95, Math.PI * 1.95); ctx.fill();
-      ctx.beginPath(); ctx.arc(headX + 7, headY - 13, 10, Math.PI * 1.08, Math.PI * 1.93); ctx.fill();
-      ctx.fillStyle = "#f7f0e8";
-      ctx.beginPath(); ctx.arc(headX + side * 6, headY - 1, 2, 0, TAU); ctx.fill();
+    // Shirt and a small number badge make the three kits readable without
+    // importing another sprite sheet.
+    ctx.fillStyle = kit;
+    ctx.strokeStyle = info.body;
+    ctx.lineWidth = 4;
+    roundRect(headX - 26, shoulderY + 3, 52, 66, 15);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.18)";
+    ctx.beginPath(); ctx.ellipse(headX + side * 9, shoulderY + 36, 7, 24, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = kitLight;
+    ctx.font = "800 15px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(player.choice === "robot" ? "AI" : player.choice === "red" ? "M" : "01", headX, shoulderY + 42);
+
+    // Draw arms over the shirt but under the head and racket. The racket arm
+    // follows the exact pose used by collision; this prevents visual drift.
+    const freeShoulderX = headX - side * 19;
+    const freeShoulderY = shoulderY + 15;
+    const freeElbowX = headX - side * (active ? 43 : 35);
+    const freeElbowY = shoulderY + (active ? 42 : 34);
+    const freeHandX = headX - side * (active ? 31 : 47);
+    const freeHandY = shoulderY + (active ? 58 : 49);
+    ctx.strokeStyle = info.body;
+    ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(freeShoulderX, freeShoulderY); ctx.lineTo(freeElbowX, freeElbowY); ctx.lineTo(freeHandX, freeHandY); ctx.stroke();
+    ctx.strokeStyle = skin;
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(freeShoulderX, freeShoulderY); ctx.lineTo(freeElbowX, freeElbowY); ctx.lineTo(freeHandX, freeHandY); ctx.stroke();
+
+    const racketShoulderX = headX + side * 19;
+    const racketShoulderY = shoulderY + 14;
+    ctx.strokeStyle = info.body;
+    ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(racketShoulderX, racketShoulderY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
+    ctx.strokeStyle = skin;
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(racketShoulderX, racketShoulderY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
+    ctx.fillStyle = skin;
+    ctx.beginPath(); ctx.arc(pose.handX, pose.handY, 5, 0, TAU); ctx.fill();
+
+    // Neck and head.
+    ctx.strokeStyle = skin;
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(headX, shoulderY + 10); ctx.lineTo(headX, headY + 19); ctx.stroke();
+    ctx.fillStyle = skin;
+    ctx.strokeStyle = info.body;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(headX, headY, 20, 0, TAU); ctx.fill(); ctx.stroke();
+
+    if (player.choice === "robot") {
+      ctx.fillStyle = "#143844";
+      roundRect(headX - 18, headY - 13, 36, 21, 5); ctx.fill();
+      ctx.strokeStyle = "#8ee7ef"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(headX - 11, headY - 3); ctx.lineTo(headX + 11, headY - 3); ctx.stroke();
+      ctx.fillStyle = "#c8ffff";
+      ctx.beginPath(); ctx.arc(headX + side * 7, headY - 3, 2.4, 0, TAU); ctx.fill();
     } else {
-      ctx.fillStyle = "#143844";
-      ctx.fillRect(headX - 14, headY - 19, 28, 8);
-      ctx.strokeStyle = "#8ee7ef";
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(headX - 9, headY - 15); ctx.lineTo(headX + 9, headY - 15); ctx.stroke();
-      ctx.fillStyle = "#143844";
-      ctx.beginPath(); ctx.arc(headX + side * 6, headY - 1, 2.5, 0, TAU); ctx.fill();
-    }
-
-    if (info.kind === "robot") {
-      ctx.strokeStyle = info.accent;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(headX - 12, headY + 13); ctx.lineTo(headX + 12, headY + 13); ctx.stroke();
-    } else if (info.kind === "red") {
-      ctx.strokeStyle = info.accent;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.moveTo(headX + side * 5, headY + 5); ctx.lineTo(headX + side * 10, headY + 7); ctx.stroke();
+      ctx.fillStyle = player.choice === "red" ? "#2c2024" : "#18272b";
+      ctx.beginPath(); ctx.arc(headX - side * 2, headY - 6, 20, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
+      ctx.beginPath(); ctx.arc(headX - side * 14, headY - 3, 7, 0, TAU); ctx.fill();
+      if (player.choice === "sam") {
+        ctx.fillStyle = "#101618";
+        ctx.fillRect(headX - 22, headY - 24, 44, 5);
+        ctx.fillRect(headX - 13, headY - 42, 26, 18);
+        ctx.fillRect(headX - 17, headY - 45, 34, 4);
+      }
+      ctx.fillStyle = "#141c20";
+      ctx.beginPath(); ctx.arc(headX + side * 7, headY - 1, 2.4, 0, TAU); ctx.fill();
     }
 
     drawRacket(player, pose);
     if (!player.onGround && player.y > 55) {
-      ctx.globalAlpha = .32;
+      ctx.globalAlpha = .28;
       ctx.strokeStyle = info.accent;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(player.x, floorY - 65, 29, Math.PI * .1, Math.PI * .9); ctx.stroke();
@@ -1343,7 +1387,13 @@
   function drawShuttle() {
     const s = state.shuttle;
     if (!s) return;
-    if (s.servePhase === "flight") {
+    const inFlight = s.servePhase === "flight";
+    const y = FLOOR - s.h;
+    const speed = Math.hypot(s.vx, s.vh);
+    const angle = inFlight ? Math.atan2(-s.vh, s.vx || 1) : s.serveAngle;
+    const scale = inFlight ? clamp(.9 + speed / 1100, .95, 1.38) : .88;
+
+    if (inFlight) {
       ctx.save();
       const shadowScale = clamp(1 - s.h / 420, .18, 1);
       ctx.globalAlpha = .24 * shadowScale;
@@ -1354,78 +1404,94 @@
       ctx.restore();
     }
 
-    s.trail.forEach((p, i) => {
-      if (p.life <= 0) return;
-      const alpha = p.life * (.34 - Math.min(i, 12) * .016);
-      ctx.save();
-      ctx.globalAlpha = Math.max(.04, alpha);
-      ctx.strokeStyle = i < 3 ? "#fff4d8" : "#e8a49a";
-      ctx.lineWidth = Math.max(1, p.size * (1 - i / 20));
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - s.vx * .025, p.y + s.vh * .025);
-      ctx.stroke();
-      ctx.restore();
-    });
-    ctx.globalAlpha = 1;
-
-    const y = FLOOR - s.h;
-    const speed = Math.hypot(s.vx, s.vh);
-    const inFlight = s.servePhase === "flight";
-    const rotation = ((s.rotation % TAU) + TAU) % TAU;
-    const frameIndex = inFlight
-      ? Math.floor(rotation / (TAU / art.shuttle.length)) % art.shuttle.length
-      : s.displayFrame;
-    const shuttleFrame = art.shuttle[frameIndex];
-    if (drawableReady(shuttleFrame)) {
-      const size = inFlight ? clamp(48 + speed / 48, 48, 72) : 38;
-      const meta = shuttleFrameMeta[frameIndex] || shuttleFrameMeta[0];
-      const flightAngle = inFlight ? Math.atan2(-s.vh, s.vx || 1) : s.serveAngle;
-      ctx.save();
-      ctx.translate(s.x, y);
-      ctx.rotate(flightAngle - meta.corkAngle);
-      ctx.globalAlpha = .96;
-      ctx.shadowColor = s.hitFlash > 0 ? "rgba(255,239,166,.95)" : "rgba(255,255,255,.12)";
-      ctx.shadowBlur = s.hitFlash > 0 ? 18 : inFlight ? 2 : 0;
-      // Draw from the cork anchor, so the point used by the physics is the
-      // same point the player tosses and the racket actually meets.
-      ctx.drawImage(shuttleFrame, -meta.anchor[0] * size, -meta.anchor[1] * size, size, size);
-      ctx.restore();
-      return;
+    // The trail follows the actual velocity vector. Each segment fades from
+    // the cork position backward, so a fast clear reads as motion instead of
+    // a decorative line glued to the shuttle.
+    if (inFlight && s.trail.length) {
+      const trailLength = clamp(speed * .020, 10, 30);
+      s.trail.forEach((p, i) => {
+        if (p.life <= 0) return;
+        const fade = p.life * (.32 - Math.min(i, 12) * .018);
+        const length = trailLength * (1 + i * .06);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(angle);
+        ctx.globalAlpha = Math.max(.025, fade);
+        ctx.strokeStyle = i < 3 ? "#fff7df" : "#e8a49a";
+        ctx.lineWidth = Math.max(1, 4 - i * .18);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(-length, 0);
+        ctx.quadraticCurveTo(-length * .45, i % 2 ? 2.5 : -2.5, 0, 0);
+        ctx.stroke();
+        ctx.restore();
+      });
     }
 
-    const scale = 1 + clamp(speed / 1700, 0, .24);
-    const angle = Math.atan2(-s.vh, s.vx || 1);
+    // The impact halo is drawn around the cork, not around the whole shuttle,
+    // so the effect lands exactly where the racket meets it.
     ctx.save();
     ctx.translate(s.x, y);
     ctx.rotate(angle);
     ctx.scale(scale, scale);
-    const impactGlow = s.hitFlash > 0;
-    ctx.fillStyle = "#ef8581";
-    ctx.strokeStyle = "#fff5df";
-    ctx.lineWidth = 1.8;
-    ctx.shadowColor = impactGlow ? "#fff1a9" : "transparent";
-    ctx.shadowBlur = impactGlow ? 16 : 0;
-    // The red cork leads the flight; the feather cone trails behind it.
-    ctx.beginPath(); ctx.arc(7, 0, 6.2, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "rgba(255,245,222,.98)";
-    ctx.strokeStyle = "#fff7e9";
+    if (s.hitFlash > 0) {
+      ctx.globalAlpha = clamp(s.hitFlash * 5, 0, 1);
+      ctx.strokeStyle = "#fff0af";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, 12 + (1 - s.hitFlash / .18) * 10, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // During a serve toss the cork stays locked to one hand-made frame; only
+    // its position changes. In flight the feather fan gets a subtle spin,
+    // while the cork remains the leading point.
+    const fanTilt = inFlight ? Math.sin(s.rotation * .9) * .11 : 0;
+    ctx.save();
+    ctx.rotate(fanTilt);
+    const featherGradient = ctx.createLinearGradient(-36, 0, 4, 0);
+    featherGradient.addColorStop(0, "#f7f6e9");
+    featherGradient.addColorStop(.6, "#fffdf2");
+    featherGradient.addColorStop(1, "#d9d8c4");
+    ctx.fillStyle = featherGradient;
+    ctx.strokeStyle = "rgba(173,176,158,.95)";
+    ctx.lineWidth = 1.15;
     ctx.beginPath();
-    ctx.moveTo(3, -4.5);
-    ctx.bezierCurveTo(-5, -9, -20, -16, -30, -13);
-    ctx.quadraticCurveTo(-24, 0, -30, 13);
-    ctx.bezierCurveTo(-20, 16, -5, 9, 3, 4.5);
+    ctx.moveTo(4, -3.5);
+    ctx.bezierCurveTo(-8, -7, -22, -17, -35, -15);
+    ctx.quadraticCurveTo(-29, -4, -33, 0);
+    ctx.quadraticCurveTo(-29, 7, -35, 15);
+    ctx.bezierCurveTo(-22, 17, -8, 7, 4, 3.5);
     ctx.closePath();
     ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = "rgba(178,181,166,.92)";
+
+    // Individual vanes keep the shuttle legible when it is small on screen.
+    ctx.strokeStyle = "rgba(176,178,160,.92)";
     ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let i = -3; i <= 3; i++) {
-      ctx.moveTo(1, i * 2.1);
-      ctx.quadraticCurveTo(-13, i * 3.1, -27, i * 4.1);
+    for (let i = -4; i <= 4; i++) {
+      const spread = i * 2.55;
+      ctx.beginPath();
+      ctx.moveTo(2, spread * .38);
+      ctx.quadraticCurveTo(-15, spread * 1.03, -31, spread * 1.16);
+      ctx.stroke();
     }
-    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,.78)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(1, -1); ctx.lineTo(-28, -10); ctx.moveTo(1, 1); ctx.lineTo(-28, 10); ctx.stroke();
+    ctx.restore();
+
+    // Cork: warm leather colour, pale highlight, and one dark seam. The
+    // physics point is its centre, so the racket never hits the feathers.
+    const corkGradient = ctx.createRadialGradient(-2, -3, 1, 1, 1, 8);
+    corkGradient.addColorStop(0, "#fff5d3");
+    corkGradient.addColorStop(.55, "#e8c995");
+    corkGradient.addColorStop(1, "#9d694b");
+    ctx.fillStyle = corkGradient;
+    ctx.strokeStyle = "#704a3b";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,247,218,.8)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(-2, -2, 2.1, 0, TAU); ctx.stroke();
     ctx.restore();
   }
 
