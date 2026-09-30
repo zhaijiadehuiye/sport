@@ -108,7 +108,7 @@
     rally: 0,
     toast: "",
     toastTimer: 0,
-    aiSkill: .96,
+    aiSkill: .9,
     playerChoice: "sam",
     opponentChoice: "red",
     players: [],
@@ -128,6 +128,14 @@
   function createPlayer(side, choice, human) {
     const info = players[choice] || players.sam;
     const spriteKit = choice === "robot" ? "sky" : choice === "red" ? "coral" : "mint";
+    const stats = {
+      // These are deliberately different, like the selectable players in the
+      // original game: Sam gets the big jump, Red trades height for speed,
+      // and Robotron stays in the middle.
+      sam: { maxSpeed: 382, acceleration: 2940, friction: 3380, jumpSpeed: 835 },
+      red: { maxSpeed: 438, acceleration: 3300, friction: 3720, jumpSpeed: 708 },
+      robot: { maxSpeed: 410, acceleration: 3120, friction: 3540, jumpSpeed: 772 }
+    }[choice] || { maxSpeed: 410, acceleration: 3120, friction: 3540, jumpSpeed: 772 };
     return {
       side,
       x: side === 0 ? 205 : 755,
@@ -135,13 +143,13 @@
       y: 0,
       vy: 0,
       vx: 0,
-      maxSpeed: 375,
-      acceleration: 2700,
-      friction: 3100,
-      jumpSpeed: 720,
+      maxSpeed: stats.maxSpeed,
+      acceleration: stats.acceleration,
+      friction: stats.friction,
+      jumpSpeed: stats.jumpSpeed,
       onGround: true,
       swingTime: 0,
-      swingDuration: .34,
+      swingDuration: .32,
       swingContacted: false,
       swingCooldown: 0,
       hitCooldown: 0,
@@ -157,6 +165,9 @@
       tapRight: 0,
       aiSeed: side * 2.71 + Math.random() * 6,
       aiThink: 0,
+      aiTargetX: side === 0 ? 205 : 755,
+      aiShotKind: "clear",
+      aiLastJump: -10,
       scoreFlash: 0
     };
   }
@@ -672,12 +683,12 @@
     const bob = player.onGround
       ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.1 + player.moveBlend * 1.7)
       : 0;
-    const actionShift = active ? side * Math.sin(progress * Math.PI) * 7 : 0;
+    const actionShift = active ? side * Math.sin(progress * Math.PI) * 4 : 0;
     const bodyY = FLOOR - player.y + bob;
     const headX = player.x + lean + actionShift;
-    const headY = bodyY - 151;
-    const shoulderY = bodyY - 113;
-    const hipY = bodyY - 55;
+    const headY = bodyY - 111;
+    const shoulderY = bodyY - 82;
+    const hipY = bodyY - 34;
     return { side, lean, active, progress, bob, actionShift, bodyY, headX, headY, shoulderY, hipY };
   }
 
@@ -687,16 +698,16 @@
     // The hand sits at the end of the striking arm. Keeping this single pose
     // as the source for both drawing and collision prevents the racket from
     // visually floating away from the stick figure.
-    const baseX = figure.headX + side * 30;
-    const baseY = figure.bodyY - 112;
+    const baseX = figure.headX + side * 17;
+    const baseY = figure.shoulderY + 7;
     const eased = progress < .5
       ? 4 * progress * progress * progress
       : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-    const rest = side === 1 ? -.88 : Math.PI + .88;
-    const start = side === 1 ? -1.66 : Math.PI + 1.66;
-    const end = side === 1 ? .46 : Math.PI - .46;
+    const rest = side === 1 ? -.9 : Math.PI + .9;
+    const start = side === 1 ? -1.68 : Math.PI + 1.68;
+    const end = side === 1 ? .36 : Math.PI - .36;
     const angle = active ? lerp(start, end, eased) : rest;
-    const reach = active ? 70 + Math.sin(progress * Math.PI) * 9 : 60;
+    const reach = active ? 52 + Math.sin(progress * Math.PI) * 7 : 45;
     const handX = baseX;
     const handY = baseY;
     return {
@@ -803,6 +814,8 @@
     const quality = clamp(.38 + timing * .34 + sweet * .24 + airborne * .08, .22, 1);
     const direction = player.side === 0 ? 1 : -1;
     const sideOffset = clamp((s.x - player.x) / 96, -1, 1);
+    const isAI = !player.human;
+    if (isAI) chooseAIShot(player, contactHeightRatio, quality);
     const aim = sideOffset * 105;
     // A smash is a fast, shallow shot. Aim its apex at the top of the net so
     // the shuttle crosses with clearance, then falls into the receiver's
@@ -819,7 +832,10 @@
 
     s.lastX = s.x;
     s.lastH = s.h;
-    s.vx = direction * baseSpeed + direction * aim;
+    const targetBias = isAI
+      ? clamp((player.aiTargetX - s.x) * .55, -260, 260)
+      : direction * aim;
+    s.vx = direction * baseSpeed + targetBias;
     s.vh = smash ? clamp(smashVertical, -520, 160) : clamp(launchHeight, 240, 790);
     s.lastHit = player.side;
     s.age = 0;
@@ -857,7 +873,7 @@
     }
   }
 
-  function predictIntercept(side, targetHeight = 116) {
+  function predictIntercept(side, targetHeight = 140) {
     const s = state.shuttle;
     if (!s) return null;
     const outgoingDirection = side === 0 ? 1 : -1;
@@ -867,7 +883,7 @@
     let vx = s.vx;
     let vh = s.vh;
     let previousX = x;
-    for (let t = 0; t < 2.1; t += .025) {
+    for (let t = .025; t < 2.4; t += .025) {
       previousX = x;
       vx *= Math.exp(-SHUTTLE_DRAG * .025);
       vh = (vh - GRAVITY * .025) * Math.exp(-SHUTTLE_VERTICAL_DRAG * .025);
@@ -876,12 +892,43 @@
       if (x < WALL_L) { x = WALL_L; vx = Math.abs(vx) * .78; }
       if (x > WALL_R) { x = WALL_R; vx = -Math.abs(vx) * .78; }
       if ((previousX - NET_X) * (x - NET_X) < 0 && h < NET_HEIGHT + 6) return null;
-      if (h <= targetHeight && vh < 0 && (side === 0 ? x < NET_X - 12 : x > NET_X + 12)) {
-        return { x, h, t };
+      if (h <= targetHeight && vh < -35 && (side === 0 ? x < NET_X - 12 : x > NET_X + 12)) {
+        return { x, h, t, vx, vh };
       }
       if (h < 0) return null;
     }
     return null;
+  }
+
+  function chooseAIShot(player, contactHeightRatio, quality) {
+    const skill = clamp(state.aiSkill, .55, 1);
+    const direction = player.side === 0 ? 1 : -1;
+    const minX = player.side === 0 ? NET_X + 48 : WALL_L + 48;
+    const maxX = player.side === 0 ? WALL_R - 48 : NET_X - 48;
+    const cycle = (state.rally + Math.floor(state.clock * 2.6) + Math.round(player.aiSeed)) % 5;
+    const canSmash = contactHeightRatio > .68 && player.y > 30 && quality > .56;
+    let kind = canSmash ? "smash" : "clear";
+    let target;
+    if (canSmash) {
+      // A skilled player changes the landing point between the sideline and
+      // the body. The target is chosen before contact so the opponent can
+      // read a real shot instead of receiving the same canned arc every time.
+      kind = cycle % 2 ? "smash-cross" : "smash-line";
+      target = cycle % 2 ? maxX - 52 : minX + 42;
+    } else if (cycle % 3 === 0) {
+      kind = "drop";
+      target = minX + (maxX - minX) * (.38 + skill * .12);
+    } else if (cycle % 3 === 1) {
+      kind = "clear";
+      target = maxX - (maxX - minX) * (.18 + skill * .12);
+    } else {
+      kind = "body";
+      target = (minX + maxX) * .5 + direction * 34;
+    }
+    const error = (1 - skill) * 74;
+    target += Math.sin(state.clock * 2.3 + player.aiSeed) * error;
+    player.aiTargetX = clamp(target, minX, maxX);
+    player.aiShotKind = kind;
   }
 
   function updateAI(player, dt) {
@@ -891,37 +938,60 @@
     // The racket head sits in front of the player's body. Move the body
     // behind the predicted contact point so the sweet spot, rather than the
     // player's centre, meets the shuttle.
-    const racketLead = 64;
+    const racketLead = 48;
     const incoming = canReceive(player, s);
-    // The red player's real racket head sits around 170–180 world units when
-    // grounded. Predict that height instead of waiting for the shuttle to
-    // drop to the ankles, which made the old AI swing too early and miss.
-    const intercept = incoming ? predictIntercept(player.side, 176) : null;
+    // Pick a contact height that the current jump can actually reach. Looking
+    // for a low, descending crossing makes the AI move early and removes the
+    // old behaviour where it waited beside the net and swung at empty air.
+    const contactHeight = clamp(126 + player.y * .48, 108, 236);
+    const intercept = incoming
+      ? predictIntercept(player.side, contactHeight)
+        || predictIntercept(player.side, 92)
+        || predictIntercept(player.side, 196)
+      : null;
     let target = player.homeX || 755;
     if (intercept) {
-      const error = (1 - state.aiSkill) * 36;
-      target = clamp(intercept.x - hitDirection * racketLead + Math.sin(state.clock * 2.2 + player.aiSeed) * error, bounds[0], bounds[1]);
+      const reaction = clamp((1 - state.aiSkill) * 58, 0, 34);
+      const error = (1 - state.aiSkill) * 34;
+      const lead = s.vx * clamp(intercept.t * .08, .02, .1);
+      target = clamp(
+        intercept.x - hitDirection * racketLead + lead
+          + Math.sin(state.clock * 2.2 + player.aiSeed) * error,
+        bounds[0], bounds[1]
+      );
+      // Rookie reactions are delayed, while PRO and NIGHTMARE begin moving
+      // as soon as the return path is known.
+      if (intercept.t < reaction) target = lerp(player.x, target, .35);
     } else if (incoming && s.x > NET_X) {
       target = clamp(s.x - hitDirection * racketLead + s.vx * .12, bounds[0], bounds[1]);
     }
 
     const distance = target - player.x;
-    const desiredSpeed = clamp(distance * 5.4, -player.maxSpeed * (0.76 + state.aiSkill * .28), player.maxSpeed * (0.76 + state.aiSkill * .28));
-    player.vx = approach(player.vx, desiredSpeed, player.acceleration * (0.76 + state.aiSkill * .35) * dt);
+    const response = .82 + state.aiSkill * .32;
+    const desiredSpeed = clamp(distance * 6.4, -player.maxSpeed * response, player.maxSpeed * response);
+    player.vx = approach(player.vx, desiredSpeed, player.acceleration * response * dt);
     player.x += player.vx * dt;
     player.x = clamp(player.x, bounds[0], bounds[1]);
     if (Math.abs(player.vx) > 15) player.facing = Math.sign(player.vx);
     player.moveBlend = lerp(player.moveBlend, Math.abs(player.vx) / player.maxSpeed, .18);
 
     if (intercept) {
-      const needJump = intercept.h > player.y + 214 && intercept.t < .8;
-      if (needJump && player.onGround && player.swingCooldown <= 0) jump(player);
+      const needJump = (intercept.h > 156 || (s.h > 190 && s.vh < 90)) && intercept.t <= .72;
+      const jumpSoon = intercept.t > .08 && intercept.t < .62;
+      if (needJump && jumpSoon && player.onGround && player.swingCooldown <= 0 && state.clock - player.aiLastJump > .35) {
+        player.aiLastJump = state.clock;
+        jump(player);
+      }
       const timeToContact = intercept.t;
-      if (timeToContact < .19 && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 118) beginSwing(player);
+      const contactWindow = .17 + state.aiSkill * .045;
+      if (timeToContact < contactWindow && Math.abs(intercept.x - (player.x + hitDirection * racketLead)) < 86) beginSwing(player);
     }
 
-    const currentDistance = Math.hypot(s.x - (player.x + hitDirection * racketLead), (FLOOR - s.h) - (FLOOR - player.y - 100));
-    if (!intercept && incoming && currentDistance < 112 && s.h < 215 && s.h > 105 && s.vh < 160) beginSwing(player);
+    const currentDistance = Math.hypot(
+      s.x - (player.x + hitDirection * racketLead),
+      (FLOOR - s.h) - (FLOOR - player.y - 110)
+    );
+    if (!intercept && incoming && currentDistance < 96 && s.h < 235 && s.h > 70 && s.vh < 170) beginSwing(player);
   }
 
   function updateShuttle(dt) {
@@ -1048,43 +1118,37 @@
   }
 
   function drawBackground() {
-    if (drawableReady(art.courtBackground)) {
-      ctx.drawImage(art.courtBackground, 0, 0, W, H);
-      return;
-    }
-
     const wall = ctx.createLinearGradient(0, 0, 0, 430);
-    wall.addColorStop(0, "#727c7b");
-    wall.addColorStop(.52, "#687371");
-    wall.addColorStop(1, "#535c5b");
+    wall.addColorStop(0, "#9aa39f");
+    wall.addColorStop(.52, "#858f8b");
+    wall.addColorStop(1, "#6f7976");
     ctx.fillStyle = wall;
     ctx.fillRect(0, 0, W, 425);
 
-    ctx.fillStyle = "rgba(18, 23, 23, .13)";
-    ctx.fillRect(0, 0, 11, 425);
-    ctx.fillRect(W - 11, 0, 11, 425);
-    ctx.strokeStyle = "rgba(20, 26, 26, .27)";
+    // The old Flash game is deliberately spare: a grey gym wall, dark side
+    // curtains and a warm wood strip. Avoid the glossy windows and gradients
+    // that made the previous recreation read like a different game.
+    ctx.fillStyle = "rgba(27, 33, 33, .30)";
+    ctx.fillRect(0, 0, 64, 425);
+    ctx.fillRect(W - 64, 0, 64, 425);
+    ctx.strokeStyle = "rgba(34, 42, 41, .28)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(45, 0); ctx.lineTo(45, 426);
-    ctx.moveTo(915, 0); ctx.lineTo(915, 426);
+    ctx.moveTo(64, 0); ctx.lineTo(64, 426);
+    ctx.moveTo(896, 0); ctx.lineTo(896, 426);
+    ctx.moveTo(156, 0); ctx.lineTo(156, 426);
+    ctx.moveTo(804, 0); ctx.lineTo(804, 426);
     ctx.stroke();
 
     grainDots.forEach((dot) => {
-      ctx.fillStyle = "rgba(30, 40, 39, " + dot.a + ")";
+      ctx.fillStyle = "rgba(30, 40, 39, " + (dot.a * 1.8) + ")";
       ctx.fillRect(dot.x, dot.y, 1, 1);
     });
-    confetti.forEach((f) => {
-      ctx.globalAlpha = f.alpha + Math.sin(state.clock * .8 + f.phase) * .06;
-      ctx.fillStyle = f.color;
-      ctx.fillRect(f.x, f.y, f.size, f.size);
-    });
-    ctx.globalAlpha = 1;
 
     const floor = ctx.createLinearGradient(0, 419, 0, H);
-    floor.addColorStop(0, "#d29d56");
-    floor.addColorStop(.34, "#c8904d");
-    floor.addColorStop(1, "#ae743b");
+    floor.addColorStop(0, "#e0ad64");
+    floor.addColorStop(.34, "#cd954e");
+    floor.addColorStop(1, "#a86c36");
     ctx.fillStyle = floor;
     ctx.beginPath();
     ctx.moveTo(108, 419); ctx.lineTo(852, 419); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
@@ -1160,12 +1224,12 @@
     ctx.save();
     ctx.fillStyle = "#050607";
     ctx.strokeStyle = "#252a2a";
-    ctx.lineWidth = 3;
-    roundRect(382, 18, 196, 60, 3); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 2;
+    roundRect(400, 22, 160, 52, 2); ctx.fill(); ctx.stroke();
     const text = String(state.score[0]) + "-" + String(state.score[1]);
-    const totalW = text.split("").reduce((n, ch) => n + (ch === "-" ? 23 : 29), 0);
+    const totalW = text.split("").reduce((n, ch) => n + (ch === "-" ? 18 : 24), 0);
     let x = 480 - totalW / 2;
-    for (const ch of text) x += drawDigit(ch, x, 31, ch === "-" ? .9 : 1);
+    for (const ch of text) x += drawDigit(ch, x, 31, ch === "-" ? .72 : .8);
     ctx.restore();
   }
 
@@ -1209,8 +1273,8 @@
       const centerY = frame.tipY + Math.sin(frame.angle) * 7;
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = ghost ? player.info.accent : "#e7e9df";
-      ctx.lineWidth = ghost ? 2.5 : 3;
+      ctx.strokeStyle = ghost ? player.info.accent : "#f4f2e7";
+      ctx.lineWidth = ghost ? 1.8 : 2.2;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(frame.handX, frame.handY);
@@ -1218,15 +1282,15 @@
       ctx.stroke();
       ctx.translate(centerX, centerY);
       ctx.rotate(frame.angle);
-      ctx.beginPath(); ctx.ellipse(0, 0, 12, 25, 0, 0, TAU); ctx.stroke();
-      ctx.strokeStyle = ghost ? player.info.accent : "rgba(207,218,211,.66)";
-      ctx.lineWidth = ghost ? 1 : 1.1;
+      ctx.beginPath(); ctx.ellipse(0, 0, 9, 19, 0, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = ghost ? player.info.accent : "rgba(207,218,211,.78)";
+      ctx.lineWidth = ghost ? .8 : .85;
       ctx.beginPath();
-      ctx.moveTo(-7, -16); ctx.lineTo(7, 16);
-      ctx.moveTo(7, -16); ctx.lineTo(-7, 16);
-      ctx.moveTo(0, -20); ctx.lineTo(0, 20);
-      ctx.moveTo(-10, -7); ctx.lineTo(10, -7);
-      ctx.moveTo(-10, 7); ctx.lineTo(10, 7);
+      ctx.moveTo(-5, -12); ctx.lineTo(5, 12);
+      ctx.moveTo(5, -12); ctx.lineTo(-5, 12);
+      ctx.moveTo(0, -16); ctx.lineTo(0, 16);
+      ctx.moveTo(-8, -6); ctx.lineTo(8, -6);
+      ctx.moveTo(-8, 6); ctx.lineTo(8, 6);
       ctx.stroke();
       ctx.restore();
     };
@@ -1239,12 +1303,12 @@
       ctx.strokeStyle = player.info.accent;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(pose.handX, pose.handY, 67, start, end, pose.side < 0);
+      ctx.arc(pose.handX, pose.handY, 50, start, end, pose.side < 0);
       ctx.stroke();
       ctx.globalAlpha = .42 * Math.sin(t * Math.PI);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(pose.handX, pose.handY, 75, start, lerp(start, end, Math.max(0, t - .08)), pose.side < 0);
+      ctx.arc(pose.handX, pose.handY, 56, start, lerp(start, end, Math.max(0, t - .08)), pose.side < 0);
       ctx.stroke();
       ctx.restore();
       if (t > .08) drawFrame(racketPose(player, clamp(t - .16, 0, 1)), .12, true);
@@ -1258,120 +1322,76 @@
     const floorY = FLOOR - player.y;
     const figure = vectorFigureTransform(player);
     const { side, active, progress, headX, bodyY, headY, shoulderY, hipY } = figure;
-    const kit = player.choice === "red" ? "#e95a58" : player.choice === "robot" ? "#49b6c9" : "#42a99b";
-    const kitLight = player.choice === "red" ? "#ff8b72" : player.choice === "robot" ? "#8ce4e5" : "#9de1c0";
-    const skin = player.choice === "robot" ? "#9bdce3" : "#d9956b";
-    const pants = "#20353c";
+    const body = "#111719";
+    const head = player.choice === "red" ? "#e93b45" : player.choice === "robot" ? "#8dd8de" : "#eee9d9";
     const pose = racketPose(player);
 
     drawShadow(player);
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    // Legs are deliberately chunky so footwork remains readable at game
-    // speed. The small walk phase gives idle movement without wobbling the
-    // collision points.
-    const walk = Math.sin(state.clock * 11 + player.side) * player.moveBlend;
-    ctx.strokeStyle = pants;
-    ctx.lineWidth = 11;
+    const walk = Math.sin(state.clock * 12 + player.side) * player.moveBlend;
+    ctx.strokeStyle = body;
+    ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(headX - 11, hipY); ctx.lineTo(headX - 18 + walk * 5, bodyY + 2);
-    ctx.moveTo(headX + 11, hipY); ctx.lineTo(headX + 18 - walk * 5, bodyY + 2);
+    ctx.moveTo(headX - 5, hipY); ctx.lineTo(headX - 12 + walk * 5, bodyY + 1);
+    ctx.moveTo(headX + 5, hipY); ctx.lineTo(headX + 12 - walk * 5, bodyY + 1);
     ctx.stroke();
 
-    // Shoes have a soft highlight so the feet remain visible against the
-    // court. They also sell the quick side-to-side movement better than a
-    // pair of one-pixel stick ends.
-    ctx.fillStyle = player.choice === "red" ? "#ff8b72" : player.choice === "robot" ? "#d1f1ef" : "#f08a73";
-    ctx.strokeStyle = info.body;
-    ctx.lineWidth = 3;
+    // The reference game uses a thin, almost hand-inked silhouette. Keep the
+    // hit points on the same lines that are visible to the player.
+    ctx.beginPath(); ctx.moveTo(headX, shoulderY); ctx.lineTo(headX, hipY); ctx.stroke();
+
+    const freeShoulderX = headX - side * 10;
+    const freeShoulderY = shoulderY + 3;
+    const freeElbowX = headX - side * (active ? 29 : 22);
+    const freeElbowY = shoulderY + (active ? 28 : 23);
+    const freeHandX = headX - side * (active ? 39 : 34);
+    const freeHandY = shoulderY + (active ? 43 : 39);
     ctx.beginPath();
-    ctx.ellipse(headX - 20 + walk * 5, bodyY + 3, 22, 8, -.08, 0, TAU);
-    ctx.ellipse(headX + 20 - walk * 5, bodyY + 3, 22, 8, .08, 0, TAU);
-    ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = "rgba(255,255,255,.48)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(headX - 32 + walk * 5, bodyY + 1); ctx.lineTo(headX - 17 + walk * 5, bodyY + 1);
-    ctx.moveTo(headX + 8 - walk * 5, bodyY + 1); ctx.lineTo(headX + 24 - walk * 5, bodyY + 1);
+    ctx.moveTo(freeShoulderX, freeShoulderY);
+    ctx.lineTo(freeElbowX, freeElbowY);
+    ctx.lineTo(freeHandX, freeHandY);
     ctx.stroke();
 
-    // Shirt and a small number badge make the three kits readable without
-    // importing another sprite sheet.
-    ctx.fillStyle = kit;
-    ctx.strokeStyle = info.body;
+    const racketShoulderX = headX + side * 10;
+    const racketShoulderY = shoulderY + 3;
+    ctx.beginPath(); ctx.moveTo(racketShoulderX, racketShoulderY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(pose.handX, pose.handY, 3.2, 0, TAU); ctx.fill();
+
     ctx.lineWidth = 4;
-    roundRect(headX - 26, shoulderY + 3, 52, 66, 15);
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,.18)";
-    ctx.beginPath(); ctx.ellipse(headX + side * 9, shoulderY + 36, 7, 24, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = kitLight;
-    ctx.font = "800 15px Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(player.choice === "robot" ? "AI" : player.choice === "red" ? "M" : "01", headX, shoulderY + 42);
-
-    // Draw arms over the shirt but under the head and racket. The racket arm
-    // follows the exact pose used by collision; this prevents visual drift.
-    const freeShoulderX = headX - side * 19;
-    const freeShoulderY = shoulderY + 15;
-    const freeElbowX = headX - side * (active ? 43 : 35);
-    const freeElbowY = shoulderY + (active ? 42 : 34);
-    const freeHandX = headX - side * (active ? 31 : 47);
-    const freeHandY = shoulderY + (active ? 58 : 49);
-    ctx.strokeStyle = info.body;
-    ctx.lineWidth = 10;
-    ctx.beginPath(); ctx.moveTo(freeShoulderX, freeShoulderY); ctx.lineTo(freeElbowX, freeElbowY); ctx.lineTo(freeHandX, freeHandY); ctx.stroke();
-    ctx.strokeStyle = skin;
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(freeShoulderX, freeShoulderY); ctx.lineTo(freeElbowX, freeElbowY); ctx.lineTo(freeHandX, freeHandY); ctx.stroke();
-
-    const racketShoulderX = headX + side * 19;
-    const racketShoulderY = shoulderY + 14;
-    ctx.strokeStyle = info.body;
-    ctx.lineWidth = 10;
-    ctx.beginPath(); ctx.moveTo(racketShoulderX, racketShoulderY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
-    ctx.strokeStyle = skin;
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(racketShoulderX, racketShoulderY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
-    ctx.fillStyle = skin;
-    ctx.beginPath(); ctx.arc(pose.handX, pose.handY, 5, 0, TAU); ctx.fill();
-
-    // Neck and head.
-    ctx.strokeStyle = skin;
-    ctx.lineWidth = 8;
-    ctx.beginPath(); ctx.moveTo(headX, shoulderY + 10); ctx.lineTo(headX, headY + 19); ctx.stroke();
-    ctx.fillStyle = skin;
-    ctx.strokeStyle = info.body;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(headX, headY, 20, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(headX, shoulderY - 2); ctx.lineTo(headX, headY + 12); ctx.stroke();
+    ctx.fillStyle = head;
+    ctx.strokeStyle = body;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.arc(headX, headY, 14, 0, TAU); ctx.fill(); ctx.stroke();
 
     if (player.choice === "robot") {
-      ctx.fillStyle = "#143844";
-      roundRect(headX - 18, headY - 13, 36, 21, 5); ctx.fill();
-      ctx.strokeStyle = "#8ee7ef"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(headX - 11, headY - 3); ctx.lineTo(headX + 11, headY - 3); ctx.stroke();
-      ctx.fillStyle = "#c8ffff";
-      ctx.beginPath(); ctx.arc(headX + side * 7, headY - 3, 2.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = "#17353b";
+      ctx.fillRect(headX - 10, headY - 6, 20, 9);
+      ctx.fillStyle = "#d8ffff";
+      ctx.beginPath(); ctx.arc(headX + side * 5, headY - 1, 1.8, 0, TAU); ctx.fill();
     } else {
-      ctx.fillStyle = player.choice === "red" ? "#2c2024" : "#18272b";
-      ctx.beginPath(); ctx.arc(headX - side * 2, headY - 6, 20, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
-      ctx.beginPath(); ctx.arc(headX - side * 14, headY - 3, 7, 0, TAU); ctx.fill();
       if (player.choice === "sam") {
-        ctx.fillStyle = "#101618";
-        ctx.fillRect(headX - 22, headY - 24, 44, 5);
-        ctx.fillRect(headX - 13, headY - 42, 26, 18);
-        ctx.fillRect(headX - 17, headY - 45, 34, 4);
+        ctx.fillStyle = body;
+        ctx.fillRect(headX - 18, headY - 17, 36, 4);
+        ctx.fillRect(headX - 10, headY - 30, 20, 14);
+        ctx.fillRect(headX - 13, headY - 33, 26, 3);
+      } else {
+        ctx.fillStyle = "#301c24";
+        ctx.beginPath(); ctx.arc(headX - side * 5, headY - 5, 13, Math.PI * 1.04, Math.PI * 1.92); ctx.fill();
       }
-      ctx.fillStyle = "#141c20";
-      ctx.beginPath(); ctx.arc(headX + side * 7, headY - 1, 2.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = body;
+      ctx.beginPath(); ctx.arc(headX + side * 5, headY - 1, 1.8, 0, TAU); ctx.fill();
     }
 
     drawRacket(player, pose);
     if (!player.onGround && player.y > 55) {
-      ctx.globalAlpha = .28;
+      ctx.globalAlpha = .16;
       ctx.strokeStyle = info.accent;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(player.x, floorY - 65, 29, Math.PI * .1, Math.PI * .9); ctx.stroke();
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(player.x, floorY - 42, 24, Math.PI * .1, Math.PI * .9); ctx.stroke();
     }
     ctx.restore();
   }
