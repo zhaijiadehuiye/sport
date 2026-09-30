@@ -498,8 +498,9 @@
     // Carry the toss toward the racket side in a shallow arc. A straight
     // line through the torso makes the shuttle appear to pass through the
     // player's face while the hand-off is still in progress.
-    s.x = lerp(hand.x, server.x + direction * 58, t)
-      + direction * 42 * Math.sin(Math.PI * t);
+    const tossCurve = 72 * Math.sin(Math.PI * Math.pow(t, .68));
+    s.x = lerp(hand.x + direction * 12, server.x + direction * 58, t)
+      + direction * tossCurve;
     s.h = tossHeight;
     s.lastX = s.x;
     s.lastH = s.h;
