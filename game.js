@@ -23,6 +23,8 @@
   const SERVE_READY_TIME = .88;
   const SERVE_TOSS_TRIGGER = .50;
   const SERVE_CONTACT_TIME = .38;
+  const SERVE_CONTACT_PROGRESS = .62;
+  const SERVE_TOSS_ARC = 36;
   const SWING_POSE_TIMES = [0, .18, .48, .76, 1];
   const SWING_DRAW_TIMES = [.18, .48, .76, 1];
 
@@ -31,6 +33,15 @@
   const rand = (a, b) => a + Math.random() * (b - a);
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
   const lerp = (a, b, t) => a + (b - a) * t;
+  const lerpAngle = (a, b, t) => {
+    const delta = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+    return a + delta * t;
+  };
+  const approachAngle = (current, target, maxStep) => {
+    const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+    return current + clamp(delta, -maxStep, maxStep);
+  };
+  const smoothstep = (t) => t * t * (3 - 2 * t);
   const approach = (value, target, amount) => {
     if (value < target) return Math.min(value + amount, target);
     if (value > target) return Math.max(value - amount, target);
@@ -168,8 +179,11 @@
       netHit: false,
       hitFlash: 0,
       rotation: 0,
+      angle: Math.PI / 2,
       servePhase: "held",
       serveTossTime: 0,
+      serveStartX: serveX,
+      serveStartH: serveH,
       serveAngle: Math.PI / 2,
       displayFrame: 0
     };
@@ -343,10 +357,6 @@
 
   function resetRally(winner) {
     state.serveSide = winner;
-    state.shuttle = createShuttle();
-    state.serveTimer = SERVE_READY_TIME;
-    state.pointPause = 0;
-    state.flash = .15;
     state.players.forEach((p, side) => {
       p.x = side === 0 ? 205 : 755;
       p.y = 0;
@@ -358,6 +368,12 @@
       p.hitCooldown = 0;
       p.onGround = true;
     });
+    // Recreate the held shuttle only after both players have returned to their
+    // serve positions, so its first frame is anchored to the real hand.
+    state.shuttle = createShuttle();
+    state.serveTimer = SERVE_READY_TIME;
+    state.pointPause = 0;
+    state.flash = .15;
   }
 
   function scorePoint(winner) {
@@ -400,8 +416,10 @@
     const server = state.players[state.serveSide];
     const direction = server.side === 0 ? 1 : -1;
     const s = state.shuttle;
-    s.x = server.x + direction * 58;
-    s.h = 150;
+    const contact = racketPose(server, SERVE_CONTACT_PROGRESS);
+    const contactHeight = clamp(FLOOR - contact.tipY, 28, 430);
+    s.x = contact.tipX;
+    s.h = contactHeight;
     s.vx = direction * 690;
     s.vh = 650;
     s.lastX = s.x;
@@ -413,9 +431,13 @@
     s.servePhase = "flight";
     s.serveTossTime = 0;
     s.displayFrame = 0;
-    s.rotation = direction * .18;
+    s.serveAngle = Math.atan2(-s.vh, s.vx || direction);
+    s.angle = s.serveAngle;
+    s.rotation = 0;
     state.serveTimer = 0;
-    server.swingTime = Math.max(server.swingTime, .34);
+    // Keep the visible follow-through after the exact contact frame instead
+    // of restarting the racket from frame zero when the serve becomes flight.
+    server.swingTime = server.swingDuration * (1 - SERVE_CONTACT_PROGRESS);
     server.swingCooldown = Math.max(server.swingCooldown, .23);
     server.swingContacted = true;
     setStatus("RALLY");
@@ -438,13 +460,11 @@
       // The hand-drawn figure has a different proportion from the old image
       // sheets. Keep the shuttle on the actual free hand instead of reusing
       // the sprite-sheet measurement, which would place it near the face.
-      const side = player.side === 0 ? 1 : -1;
-      const lean = clamp(player.vx / 800, -1, 1) * 4;
-      const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.1 + player.moveBlend * 1.7) : 0;
-      const bodyY = FLOOR - player.y + bob;
+      const figure = vectorFigureTransform(player);
+      const side = figure.side;
       return {
-        x: player.x + lean - side * 47,
-        y: bodyY - 64
+        x: figure.headX - side * (figure.active ? 31 : 47),
+        y: figure.shoulderY + (figure.active ? 58 : 49)
       };
     }
     // The non-racket hand is the launch point. The opponent idle art already
@@ -469,6 +489,9 @@
     if (s.servePhase === "held" && state.serveTimer <= SERVE_TOSS_TRIGGER) {
       s.servePhase = "toss";
       s.serveTossTime = 0;
+      const hand = serveHandWorld(server);
+      s.serveStartX = hand.x;
+      s.serveStartH = FLOOR - hand.y;
       s.rotation = 0;
     }
 
@@ -486,26 +509,37 @@
 
     s.serveTossTime += dt;
     const t = clamp(s.serveTossTime / SERVE_CONTACT_TIME, 0, 1);
-    if (s.serveTossTime >= .14 && server.swingTime <= 0) beginServeSwing(server);
+    const swingStart = SERVE_CONTACT_TIME - server.swingDuration * SERVE_CONTACT_PROGRESS;
+    if (s.serveTossTime >= swingStart && server.swingTime <= 0) beginServeSwing(server);
+    // The normal match update is intentionally paused during a serve, so the
+    // serve animation must advance its own swing clock here.
+    if (server.swingTime > 0) server.swingTime = Math.max(0, server.swingTime - dt);
 
     // A short, visible underhand toss: rise first, then drop into the
     // forward swing instead of teleporting from the player's hand.
+    const contact = racketPose(server, SERVE_CONTACT_PROGRESS);
+    const contactHeight = clamp(FLOOR - contact.tipY, 28, 430);
+    const startX = Number.isFinite(s.serveStartX) ? s.serveStartX : hand.x;
+    const startH = Number.isFinite(s.serveStartH) ? s.serveStartH : FLOOR - hand.y;
     const tossT = clamp(t / .72, 0, 1);
     const dropT = clamp((t - .72) / .28, 0, 1);
+    const peakHeight = Math.max(188, Math.max(startH, contactHeight) + 72);
     const tossHeight = t < .72
-      ? lerp(FLOOR - hand.y, 188, 1 - Math.pow(1 - tossT, 2))
-      : lerp(188, 150, dropT * dropT);
+      ? lerp(startH, peakHeight, 1 - Math.pow(1 - tossT, 2))
+      : lerp(peakHeight, contactHeight, dropT * dropT);
     // Carry the toss toward the racket side in a shallow arc. A straight
     // line through the torso makes the shuttle appear to pass through the
     // player's face while the hand-off is still in progress.
-    const tossCurve = 72 * Math.sin(Math.PI * Math.pow(t, .68));
-    s.x = lerp(hand.x + direction * 12, server.x + direction * 58, t)
+    const tossCurve = SERVE_TOSS_ARC * Math.sin(Math.PI * Math.pow(t, .78));
+    s.x = lerp(startX, contact.tipX, t)
       + direction * tossCurve;
     s.h = tossHeight;
     s.lastX = s.x;
     s.lastH = s.h;
     s.displayFrame = 0;
-    s.rotation = 0;
+    const flightAngle = Math.atan2(-650, direction * 690);
+    s.serveAngle = lerpAngle(Math.PI / 2, flightAngle, smoothstep(dropT));
+    s.angle = s.serveAngle;
 
     if (s.serveTossTime >= SERVE_CONTACT_TIME) serve();
   }
@@ -630,16 +664,31 @@
     };
   }
 
-  function vectorRacketPose(player, overrideProgress = null) {
+  function vectorFigureTransform(player, overrideProgress = null) {
     const side = player.side === 0 ? 1 : -1;
     const lean = clamp(player.vx / 800, -1, 1) * 4;
+    const active = player.swingTime > 0 || overrideProgress !== null;
+    const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
+    const bob = player.onGround
+      ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.1 + player.moveBlend * 1.7)
+      : 0;
+    const actionShift = active ? side * Math.sin(progress * Math.PI) * 7 : 0;
+    const bodyY = FLOOR - player.y + bob;
+    const headX = player.x + lean + actionShift;
+    const headY = bodyY - 151;
+    const shoulderY = bodyY - 113;
+    const hipY = bodyY - 55;
+    return { side, lean, active, progress, bob, actionShift, bodyY, headX, headY, shoulderY, hipY };
+  }
+
+  function vectorRacketPose(player, overrideProgress = null) {
+    const figure = vectorFigureTransform(player, overrideProgress);
+    const { side, active, progress } = figure;
     // The hand sits at the end of the striking arm. Keeping this single pose
     // as the source for both drawing and collision prevents the racket from
     // visually floating away from the stick figure.
-    const baseX = player.x + lean + side * 30;
-    const baseY = FLOOR - player.y - 112;
-    const active = player.swingTime > 0;
-    const progress = overrideProgress ?? (active ? 1 - player.swingTime / player.swingDuration : 0);
+    const baseX = figure.headX + side * 30;
+    const baseY = figure.bodyY - 112;
     const eased = progress < .5
       ? 4 * progress * progress * progress
       : 1 - Math.pow(-2 * progress + 2, 3) / 2;
@@ -743,7 +792,7 @@
       Math.hypot(previousBx - pose.tipX, previousBy - pose.tipY)
     );
     const distance = Math.min(racketDistance, tipDistance);
-    const contactRadius = player.human ? 62 : 56 + (player.side === 1 ? 8 : 0);
+    const contactRadius = player.human ? 38 : 34;
     const contactHeight = Math.max(s.h, s.lastH);
     if (distance > contactRadius || contactHeight < 26 || contactHeight > 430) return false;
 
@@ -882,7 +931,14 @@
     s.age += dt;
     s.lastX = s.x;
     s.lastH = s.h;
-    s.trail.unshift({ x: s.x, y: FLOOR - s.h, life: 1, size: clamp(Math.hypot(s.vx, s.vh) / 440, 2, 6) });
+    s.trail.unshift({
+      x: s.x,
+      y: FLOOR - s.h,
+      life: 1,
+      size: clamp(Math.hypot(s.vx, s.vh) / 440, 2, 6),
+      speed: Math.hypot(s.vx, s.vh),
+      angle: s.angle
+    });
     if (s.trail.length > 16) s.trail.pop();
     s.trail.forEach((p, index) => { p.life -= dt * (3.4 + index * .06); });
     s.trail = s.trail.filter((p) => p.life > 0);
@@ -894,6 +950,7 @@
     s.vh = (s.vh - GRAVITY * dt) * Math.exp(-SHUTTLE_VERTICAL_DRAG * dt);
     s.x += s.vx * dt;
     s.h += s.vh * dt;
+    s.angle = approachAngle(s.angle, Math.atan2(-s.vh, s.vx || 1), dt * 14);
     s.rotation += s.vx * dt * .004;
 
     if (s.x < WALL_L) {
@@ -1198,18 +1255,9 @@
 
   function drawStickPlayer(player) {
     const info = player.info;
-    const side = player.side === 0 ? 1 : -1;
     const floorY = FLOOR - player.y;
-    const active = player.swingTime > 0;
-    const progress = active ? clamp(1 - player.swingTime / player.swingDuration, 0, 1) : 0;
-    const bob = player.onGround ? Math.sin(state.clock * 8 + player.side * 1.3) * (1.1 + player.moveBlend * 1.7) : 0;
-    const lean = clamp(player.vx / 800, -1, 1) * 4;
-    const actionShift = active ? side * Math.sin(progress * Math.PI) * 7 : 0;
-    const headX = player.x + lean + actionShift;
-    const bodyY = floorY + bob;
-    const headY = bodyY - 151;
-    const shoulderY = bodyY - 113;
-    const hipY = bodyY - 55;
+    const figure = vectorFigureTransform(player);
+    const { side, active, progress, headX, bodyY, headY, shoulderY, hipY } = figure;
     const kit = player.choice === "red" ? "#e95a58" : player.choice === "robot" ? "#49b6c9" : "#42a99b";
     const kitLight = player.choice === "red" ? "#ff8b72" : player.choice === "robot" ? "#8ce4e5" : "#9de1c0";
     const skin = player.choice === "robot" ? "#9bdce3" : "#d9956b";
@@ -1404,7 +1452,7 @@
     const inFlight = s.servePhase === "flight";
     const y = FLOOR - s.h;
     const speed = Math.hypot(s.vx, s.vh);
-    const angle = inFlight ? Math.atan2(-s.vh, s.vx || 1) : s.serveAngle;
+    const angle = inFlight ? (s.angle ?? Math.atan2(-s.vh, s.vx || 1)) : s.serveAngle;
     const scale = inFlight ? clamp(.9 + speed / 1100, .95, 1.38) : .88;
 
     if (inFlight) {
@@ -1429,13 +1477,13 @@
         const length = trailLength * (1 + i * .06);
         ctx.save();
         ctx.translate(p.x, p.y);
-        ctx.rotate(angle);
+        ctx.rotate(p.angle ?? angle);
         ctx.globalAlpha = Math.max(.025, fade);
         ctx.strokeStyle = i < 3 ? "#fff7df" : "#e8a49a";
         ctx.lineWidth = Math.max(1, 4 - i * .18);
         ctx.lineCap = "round";
         ctx.beginPath();
-        ctx.moveTo(-length, 0);
+        ctx.moveTo(-length * (p.speed ? clamp(p.speed / Math.max(speed, 1), .72, 1.2) : 1), 0);
         ctx.quadraticCurveTo(-length * .45, i % 2 ? 2.5 : -2.5, 0, 0);
         ctx.stroke();
         ctx.restore();
