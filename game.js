@@ -7,7 +7,7 @@
   const H = 540;
   const FLOOR = 462;
   const NET_X = 480;
-  const NET_TOP = 334;
+  const NET_TOP = 370;
   const NET_HEIGHT = FLOOR - NET_TOP;
   const WALL_L = 42;
   const WALL_R = 918;
@@ -686,9 +686,9 @@
     const actionShift = active ? side * Math.sin(progress * Math.PI) * 4 : 0;
     const bodyY = FLOOR - player.y + bob;
     const headX = player.x + lean + actionShift;
-    const headY = bodyY - 111;
-    const shoulderY = bodyY - 82;
-    const hipY = bodyY - 34;
+    const headY = bodyY - 94;
+    const shoulderY = bodyY - 69;
+    const hipY = bodyY - 29;
     return { side, lean, active, progress, bob, actionShift, bodyY, headX, headY, shoulderY, hipY };
   }
 
@@ -698,8 +698,8 @@
     // The hand sits at the end of the striking arm. Keeping this single pose
     // as the source for both drawing and collision prevents the racket from
     // visually floating away from the stick figure.
-    const baseX = figure.headX + side * 17;
-    const baseY = figure.shoulderY + 7;
+    const baseX = figure.headX + side * 14;
+    const baseY = figure.shoulderY + 5;
     const eased = progress < .5
       ? 4 * progress * progress * progress
       : 1 - Math.pow(-2 * progress + 2, 3) / 2;
@@ -707,7 +707,7 @@
     const start = side === 1 ? -1.68 : Math.PI + 1.68;
     const end = side === 1 ? .36 : Math.PI - .36;
     const angle = active ? lerp(start, end, eased) : rest;
-    const reach = active ? 52 + Math.sin(progress * Math.PI) * 7 : 45;
+    const reach = active ? 45 + Math.sin(progress * Math.PI) * 6 : 40;
     const handX = baseX;
     const handY = baseY;
     return {
@@ -943,7 +943,7 @@
     // Pick a contact height that the current jump can actually reach. Looking
     // for a low, descending crossing makes the AI move early and removes the
     // old behaviour where it waited beside the net and swung at empty air.
-    const contactHeight = clamp(126 + player.y * .48, 108, 236);
+    const contactHeight = clamp(104 + player.y * .48, 92, 220);
     const intercept = incoming
       ? predictIntercept(player.side, contactHeight)
         || predictIntercept(player.side, 92)
@@ -976,7 +976,7 @@
     player.moveBlend = lerp(player.moveBlend, Math.abs(player.vx) / player.maxSpeed, .18);
 
     if (intercept) {
-      const needJump = (intercept.h > 156 || (s.h > 190 && s.vh < 90)) && intercept.t <= .72;
+      const needJump = (intercept.h > 132 || (s.h > 190 && s.vh < 90)) && intercept.t <= .72;
       const jumpSoon = intercept.t > .08 && intercept.t < .62;
       if (needJump && jumpSoon && player.onGround && player.swingCooldown <= 0 && state.clock - player.aiLastJump > .35) {
         player.aiLastJump = state.clock;
@@ -1225,11 +1225,11 @@
     ctx.fillStyle = "#050607";
     ctx.strokeStyle = "#252a2a";
     ctx.lineWidth = 2;
-    roundRect(400, 22, 160, 52, 2); ctx.fill(); ctx.stroke();
+    roundRect(405, 31, 150, 46, 2); ctx.fill(); ctx.stroke();
     const text = String(state.score[0]) + "-" + String(state.score[1]);
-    const totalW = text.split("").reduce((n, ch) => n + (ch === "-" ? 18 : 24), 0);
+    const totalW = text.split("").reduce((n, ch) => n + (ch === "-" ? 16 : 21), 0);
     let x = 480 - totalW / 2;
-    for (const ch of text) x += drawDigit(ch, x, 31, ch === "-" ? .72 : .8);
+    for (const ch of text) x += drawDigit(ch, x, 35, ch === "-" ? .64 : .7);
     ctx.restore();
   }
 
@@ -1282,15 +1282,15 @@
       ctx.stroke();
       ctx.translate(centerX, centerY);
       ctx.rotate(frame.angle);
-      ctx.beginPath(); ctx.ellipse(0, 0, 9, 19, 0, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, 8, 17, 0, 0, TAU); ctx.stroke();
       ctx.strokeStyle = ghost ? player.info.accent : "rgba(207,218,211,.78)";
       ctx.lineWidth = ghost ? .8 : .85;
       ctx.beginPath();
-      ctx.moveTo(-5, -12); ctx.lineTo(5, 12);
-      ctx.moveTo(5, -12); ctx.lineTo(-5, 12);
-      ctx.moveTo(0, -16); ctx.lineTo(0, 16);
-      ctx.moveTo(-8, -6); ctx.lineTo(8, -6);
-      ctx.moveTo(-8, 6); ctx.lineTo(8, 6);
+      ctx.moveTo(-4, -11); ctx.lineTo(4, 11);
+      ctx.moveTo(4, -11); ctx.lineTo(-4, 11);
+      ctx.moveTo(0, -14); ctx.lineTo(0, 14);
+      ctx.moveTo(-7, -5); ctx.lineTo(7, -5);
+      ctx.moveTo(-7, 5); ctx.lineTo(7, 5);
       ctx.stroke();
       ctx.restore();
     };
@@ -1303,12 +1303,12 @@
       ctx.strokeStyle = player.info.accent;
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(pose.handX, pose.handY, 50, start, end, pose.side < 0);
+      ctx.arc(pose.handX, pose.handY, 44, start, end, pose.side < 0);
       ctx.stroke();
       ctx.globalAlpha = .42 * Math.sin(t * Math.PI);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(pose.handX, pose.handY, 56, start, lerp(start, end, Math.max(0, t - .08)), pose.side < 0);
+      ctx.arc(pose.handX, pose.handY, 49, start, lerp(start, end, Math.max(0, t - .08)), pose.side < 0);
       ctx.stroke();
       ctx.restore();
       if (t > .08) drawFrame(racketPose(player, clamp(t - .16, 0, 1)), .12, true);
@@ -1332,52 +1332,52 @@
     ctx.lineJoin = "round";
     const walk = Math.sin(state.clock * 12 + player.side) * player.moveBlend;
     ctx.strokeStyle = body;
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(headX - 5, hipY); ctx.lineTo(headX - 12 + walk * 5, bodyY + 1);
-    ctx.moveTo(headX + 5, hipY); ctx.lineTo(headX + 12 - walk * 5, bodyY + 1);
+    ctx.moveTo(headX - 4, hipY); ctx.lineTo(headX - 10 + walk * 4, bodyY + 1);
+    ctx.moveTo(headX + 4, hipY); ctx.lineTo(headX + 10 - walk * 4, bodyY + 1);
     ctx.stroke();
 
     // The reference game uses a thin, almost hand-inked silhouette. Keep the
     // hit points on the same lines that are visible to the player.
     ctx.beginPath(); ctx.moveTo(headX, shoulderY); ctx.lineTo(headX, hipY); ctx.stroke();
 
-    const freeShoulderX = headX - side * 10;
-    const freeShoulderY = shoulderY + 3;
-    const freeElbowX = headX - side * (active ? 29 : 22);
-    const freeElbowY = shoulderY + (active ? 28 : 23);
-    const freeHandX = headX - side * (active ? 39 : 34);
-    const freeHandY = shoulderY + (active ? 43 : 39);
+    const freeShoulderX = headX - side * 9;
+    const freeShoulderY = shoulderY + 2;
+    const freeElbowX = headX - side * (active ? 25 : 19);
+    const freeElbowY = shoulderY + (active ? 23 : 19);
+    const freeHandX = headX - side * (active ? 34 : 29);
+    const freeHandY = shoulderY + (active ? 36 : 32);
     ctx.beginPath();
     ctx.moveTo(freeShoulderX, freeShoulderY);
     ctx.lineTo(freeElbowX, freeElbowY);
     ctx.lineTo(freeHandX, freeHandY);
     ctx.stroke();
 
-    const racketShoulderX = headX + side * 10;
-    const racketShoulderY = shoulderY + 3;
+    const racketShoulderX = headX + side * 9;
+    const racketShoulderY = shoulderY + 2;
     ctx.beginPath(); ctx.moveTo(racketShoulderX, racketShoulderY); ctx.lineTo(pose.handX, pose.handY); ctx.stroke();
     ctx.fillStyle = body;
     ctx.beginPath(); ctx.arc(pose.handX, pose.handY, 3.2, 0, TAU); ctx.fill();
 
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(headX, shoulderY - 2); ctx.lineTo(headX, headY + 12); ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(headX, shoulderY - 2); ctx.lineTo(headX, headY + 10); ctx.stroke();
     ctx.fillStyle = head;
     ctx.strokeStyle = body;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath(); ctx.arc(headX, headY, 14, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(headX, headY, 12, 0, TAU); ctx.fill(); ctx.stroke();
 
     if (player.choice === "robot") {
       ctx.fillStyle = "#17353b";
-      ctx.fillRect(headX - 10, headY - 6, 20, 9);
+      ctx.fillRect(headX - 9, headY - 5, 18, 8);
       ctx.fillStyle = "#d8ffff";
       ctx.beginPath(); ctx.arc(headX + side * 5, headY - 1, 1.8, 0, TAU); ctx.fill();
     } else {
       if (player.choice === "sam") {
         ctx.fillStyle = body;
-        ctx.fillRect(headX - 18, headY - 17, 36, 4);
-        ctx.fillRect(headX - 10, headY - 30, 20, 14);
-        ctx.fillRect(headX - 13, headY - 33, 26, 3);
+        ctx.fillRect(headX - 15, headY - 14, 30, 3);
+        ctx.fillRect(headX - 8, headY - 25, 16, 12);
+        ctx.fillRect(headX - 11, headY - 28, 22, 3);
       } else {
         ctx.fillStyle = "#301c24";
         ctx.beginPath(); ctx.arc(headX - side * 5, headY - 5, 13, Math.PI * 1.04, Math.PI * 1.92); ctx.fill();
