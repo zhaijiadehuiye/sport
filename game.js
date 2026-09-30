@@ -1772,5 +1772,7 @@
 
   drawScene();
   rafId = requestAnimationFrame(loop);
+  // Read-only hook used by the hosted smoke test; it does not affect play.
+  window.__sportDebug = { state, predictIntercept, racketPose, canReceive };
   window.addEventListener("beforeunload", () => cancelAnimationFrame(rafId));
 })();
