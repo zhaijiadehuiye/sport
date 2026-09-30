@@ -786,8 +786,8 @@
     // Contact is restricted to the racket's forward stroke. The late
     // follow-through is still rendered, but it can no longer create a hit
     // after the visible racket has already passed the shuttle.
-    const latestContactFrame = player.human ? .84 : .76;
-    if (progress < .24 || progress > latestContactFrame) return false;
+    const latestContactFrame = player.human ? .84 : .90;
+    if (progress < (player.human ? .24 : .14) || progress > latestContactFrame) return false;
 
     const pose = racketPose(player, progress);
     const bx = s.x;
@@ -803,7 +803,7 @@
       Math.hypot(previousBx - pose.tipX, previousBy - pose.tipY)
     );
     const distance = Math.min(racketDistance, tipDistance);
-    const contactRadius = player.human ? 38 : 34;
+    const contactRadius = player.human ? 38 : 52;
     const contactHeight = Math.max(s.h, s.lastH);
     if (distance > contactRadius || contactHeight < 26 || contactHeight > 430) return false;
 
@@ -991,7 +991,7 @@
       s.x - (player.x + hitDirection * racketLead),
       (FLOOR - s.h) - (FLOOR - player.y - 110)
     );
-    if (!intercept && incoming && currentDistance < 96 && s.h < 235 && s.h > 70 && s.vh < 170) beginSwing(player);
+    if (incoming && currentDistance < 150 && s.h < 255 && s.h > 55 && s.vh < 190) beginSwing(player);
   }
 
   function updateShuttle(dt) {
